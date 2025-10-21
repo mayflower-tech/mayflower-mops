@@ -40,6 +40,7 @@ class Group(Element):
             parent: Union[Group, Element, bool] = None,
             wait: Optional[bool] = None,
             driver_wrapper: Union[DriverWrapper, Any] = None,
+            avoid_translation: bool | None = None,
     ):
         """
         Initializes a group of elements based on the current driver.
@@ -62,6 +63,8 @@ class Group(Element):
         :param driver_wrapper: The :class:`.DriverWrapper` instance or
          an object containing it to be used for entire group.
         :type driver_wrapper: typing.Union[DriverWrapper, typing.Any]
+        :param avoid_translation: If `True`, the element will not be translated with i18n
+        :type avoid_translation: typing.Optional[bool]
         """
         self._init_locals = locals()
         super().__init__(
@@ -70,6 +73,7 @@ class Group(Element):
             parent=parent,
             wait=wait,
             driver_wrapper=driver_wrapper,
+            avoid_translation=avoid_translation
         )
 
     def _modify_children(self) -> None:

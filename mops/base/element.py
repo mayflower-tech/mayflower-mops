@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from copy import copy
+from pathlib import Path
 from typing import Union, List, Type, Tuple, Optional, TYPE_CHECKING
 
 from PIL.Image import Image
@@ -40,6 +41,7 @@ from mops.utils.internal_utils import (
     QUARTER_WAIT_EL,
 )
 from mops.utils.decorators import wait_condition, wait_continuous
+from mops.utils.i18n_translator import I18nTranslator
 
 if TYPE_CHECKING:
     from mops.base.group import Group
@@ -58,6 +60,8 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC):
     _object = 'element'
     _base_cls: Type[PlayElement, MobileElement, WebElement]
     driver_wrapper: DriverWrapper
+
+    _translator: Optional[I18nTranslator] = None
 
     def __new__(cls, *args, **kwargs):
         instance = super(Element, cls).__new__(cls)
@@ -87,6 +91,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC):
             parent: Union[Group, Element, bool] = None,
             wait: Optional[bool] = None,
             driver_wrapper: Union[DriverWrapper, Any] = None,
+            avoid_translation: Optional[bool] = None,
     ):
         """
         Initializes an Element based on the current driver.
@@ -105,6 +110,8 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC):
         :param driver_wrapper: The :class:`.DriverWrapper` instance or
          an object containing it to be used for this element.
         :type driver_wrapper: typing.Union[DriverWrapper, typing.Any]
+        :param avoid_translation: If `True`, the element will not be translated with i18n
+        :type avoid_translation: typing.Optional[bool]
         """
         self._validate_inheritance()
 
@@ -114,7 +121,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC):
                          f'object or False for skip. Get {parent}')
                 raise ValueError(error)
 
-        self.locator = locator
+        self.locator = locator if avoid_translation else self._prepare_locator(locator)
         self.name = name if name else locator
         self.parent = parent
         self.wait = wait
@@ -157,6 +164,37 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC):
         self._set_static(self._base_cls)
         self._base_cls.__init__(self)
         self._initialized = True
+
+    @classmethod
+    def get_translator(cls) -> I18nTranslator:
+        """Return the active translator, instantiating a default one if required."""
+        if Element._translator is None:
+            Element._translator = I18nTranslator()
+        return Element._translator
+
+    @classmethod
+    def configure_translator(cls, *, path: Union[str, Path], locale: Optional[str] = None) -> I18nTranslator:
+        """Helper to configure the shared translator with a specific catalogue."""
+        translator = cls.get_translator()
+        translator.configure(path=path, locale=locale)
+        return translator
+
+    def get_translated_text(self, text: str) -> str:
+        """Return translated text or the original value when no translation found."""
+        if not isinstance(text, str) or not text:
+            return text
+        return self.get_translator().resolve_placeholders(text)
+
+    def _prepare_locator(self, locator: str) -> str:
+        result = locator
+
+        if isinstance(locator, Locator):
+            for k, v in vars(locator).items():
+                setattr(locator, k, self.get_translated_text(v) if v else v)
+        else:
+            result = self.get_translated_text(locator)
+
+        return result
 
     # Following methods works same for both Selenium/Appium and Playwright APIs using internal methods
 
