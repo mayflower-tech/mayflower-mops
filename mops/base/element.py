@@ -129,8 +129,9 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         """
         self.driver_wrapper = get_driver_wrapper_from_object(driver_wrapper)
 
-        self.locator = locator if avoid_translation else self._prepare_locator(locator)
-        self.source_locator = self.locator
+        locator = locator if avoid_translation else self._prepare_locator(locator)
+        self.locator = locator
+        self.source_locator = locator
         self.name = name or locator
         self.parent = parent
         self.wait = wait
