@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+import re
+from typing import Any
 
 try:  # pragma: no cover - Python 3.11+
     import tomllib  # type: ignore[attr-defined]
@@ -16,8 +15,8 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for Python <3.11
         tomllib = None  # type: ignore
 
 __all__ = (
-    'I18nTranslator',
     'I18nConfigurationError',
+    'I18nTranslator',
     'configure_translator',
 )
 
@@ -26,8 +25,8 @@ _PLACEHOLDER_PATTERN = re.compile(r'\{(.*?)}')
 _ENV_PATH = 'MOPS_I18N_PATH'
 _ENV_LOCALE = 'MOPS_I18N_LOCALE'
 
-_MANUAL_PATH: Optional[Union[str, Path]] = None
-_MANUAL_LOCALE: Optional[str] = None
+_MANUAL_PATH: str | Path | None = None
+_MANUAL_LOCALE: str | None = None
 _MANUAL_PARSED = False
 
 class I18nConfigurationError(RuntimeError):
@@ -46,8 +45,8 @@ class I18nTranslator:
     def __init__(
             self,
             *,
-            locale: Optional[str] = None,
-            base_dir: Optional[Union[str, Path]] = None,
+            locale: str | None = None,
+            base_dir: str | Path | None = None,
     ) -> None:
         """
         Initialize the translator.
@@ -58,8 +57,8 @@ class I18nTranslator:
         self._forced_locale = locale
         self._base_dir = self._resolve_base_dir(base_dir)
 
-        self._catalogue: Optional[Dict[str, Any]] = None
-        self._locale: Optional[str] = None
+        self._catalogue: dict[str, Any] | None = None
+        self._locale: str | None = None
 
     @property
     def loaded(self) -> bool:
@@ -71,7 +70,7 @@ class I18nTranslator:
         return self._catalogue is not None
 
     @property
-    def locale(self) -> Optional[str]:
+    def locale(self) -> str | None:
         """
         Get the active locale.
 
@@ -79,7 +78,7 @@ class I18nTranslator:
         """
         return self._forced_locale or self._locale
 
-    def configure(self, *, path: Union[str, Path], locale: Optional[str] = None) -> None:
+    def configure(self, *, path: str | Path, locale: str | None = None) -> None:
         """
         Configure the translator with a specific catalogue path and locale.
 
@@ -91,7 +90,7 @@ class I18nTranslator:
         self._catalogue = self._load_catalogue(target_path)
         self._locale = locale
 
-    def translate(self, key: str, default: Optional[str] = None, *, locale: Optional[str] = None) -> str:
+    def translate(self, key: str, default: str | None = None, *, locale: str | None = None) -> str:
         """
         Translate a key using the loaded catalogue.
 
@@ -108,7 +107,7 @@ class I18nTranslator:
 
         return str(value)
 
-    def resolve_placeholders(self, text: str, *, locale: Optional[str] = None) -> str:
+    def resolve_placeholders(self, text: str, *, locale: str | None = None) -> str:
         """
         Resolve ``{key}`` placeholders in the given text.
 
@@ -116,7 +115,6 @@ class I18nTranslator:
         :param locale: Optional locale to use for translations.
         :return: The text with placeholders resolved.
         """
-
         if not text or '{' not in text:
             return text
 
@@ -130,7 +128,7 @@ class I18nTranslator:
 
     # Internal helpers
 
-    def _catalogue_for(self, locale: Optional[str]) -> Dict[str, Any]:
+    def _catalogue_for(self, locale: str | None) -> dict[str, Any]:
         if self._catalogue is None:
             self._load()
 
@@ -167,14 +165,14 @@ class I18nTranslator:
         self._catalogue = catalogue
         self._locale = locale
 
-    def _discover_configuration(self) -> Optional[Tuple[Path, Optional[str]]]:
+    def _discover_configuration(self) -> tuple[Path, str | None] | None:
         for resolver in (self._config_manual, self._config_from_env, self._config_from_pyproject):
             configuration = resolver()
             if configuration:
                 return configuration
         return None
 
-    def _config_manual(self) -> Optional[Tuple[Path, Optional[str]]]:
+    def _config_manual(self) -> tuple[Path, str | None] | None:
         if _MANUAL_PATH is None:
             return None
 
@@ -185,13 +183,15 @@ class I18nTranslator:
         elif resolved.is_dir() and isinstance(_MANUAL_LOCALE, str):
             resolved = resolved / (_MANUAL_LOCALE + '.json')
             if not resolved.exists():
-                raise I18nConfigurationError(f'I18n catalogue "{resolved}" does not exist.')
+                msg = f'I18n catalogue "{resolved}" does not exist.'
+                raise I18nConfigurationError(msg)
         else:
-            raise I18nConfigurationError(f'I18n catalogue "{resolved}" does not exist.')
+            msg = f'I18n catalogue "{resolved}" does not exist.'
+            raise I18nConfigurationError(msg)
 
         return resolved, _MANUAL_LOCALE
 
-    def _config_from_env(self) -> Optional[Tuple[Path, Optional[str]]]:
+    def _config_from_env(self) -> tuple[Path, str | None] | None:
         raw_path = os.getenv(_ENV_PATH)
         locale = os.getenv(_ENV_LOCALE)
 
@@ -202,7 +202,7 @@ class I18nTranslator:
 
         return None
 
-    def _config_from_pyproject(self) -> Optional[Tuple[Path, Optional[str]]]:
+    def _config_from_pyproject(self) -> tuple[Path, str | None] | None:
         pyproject = self._find_pyproject()
 
         if not pyproject or not tomllib:
@@ -229,7 +229,7 @@ class I18nTranslator:
 
         return None
 
-    def _find_pyproject(self) -> Optional[Path]:
+    def _find_pyproject(self) -> Path | None:
         current = self._base_dir
         for directory in (current, *current.parents):
             candidate = directory / 'pyproject.toml'
@@ -237,12 +237,12 @@ class I18nTranslator:
                 return candidate
         return None
 
-    def _resolve_base_dir(self, base_dir: Optional[Union[str, Path]]) -> Path:
+    def _resolve_base_dir(self, base_dir: str | Path | None) -> Path:
         if base_dir is None:
             return Path.cwd().resolve()
         return Path(base_dir).expanduser().resolve()
 
-    def _resolve_path(self, value: Union[str, Path], *, base: Optional[Path] = None) -> Path:
+    def _resolve_path(self, value: str | Path, *, base: Path | None = None) -> Path:
         path = Path(value).expanduser()
         if path.is_absolute():
             return path
@@ -250,14 +250,14 @@ class I18nTranslator:
         return (root / path).resolve()
 
     @staticmethod
-    def _absolute_path(value: Union[str, Path]) -> Path:
+    def _absolute_path(value: str | Path) -> Path:
         path = Path(value).expanduser()
         if path.is_absolute():
             return path
         return path.resolve()
 
     @staticmethod
-    def _lookup(source: Dict[str, Any], key: str) -> Optional[Any]:
+    def _lookup(source: dict[str, Any], key: str) -> Any | None:
         if key in source:
             return source[key]
 
@@ -275,25 +275,28 @@ class I18nTranslator:
         return current
 
     @staticmethod
-    def _load_catalogue(path: Path) -> Dict[str, Any]:
+    def _load_catalogue(path: Path) -> dict[str, Any]:
         try:
             with path.open('r', encoding='utf-8') as stream:
                 data = json.load(stream)
         except FileNotFoundError as error:
-            raise I18nConfigurationError(f'I18n catalogue "{path}" does not exist.') from error
+            msg = f'I18n catalogue "{path}" does not exist.'
+            raise I18nConfigurationError(msg) from error
         except json.JSONDecodeError as error:
-            raise I18nConfigurationError(f'I18n catalogue "{path}" has invalid JSON: {error}.') from error
+            msg = f'I18n catalogue "{path}" has invalid JSON: {error}.'
+            raise I18nConfigurationError(msg) from error
 
         if not isinstance(data, dict):
-            raise I18nConfigurationError('I18n catalogue must contain a JSON object at the top level.')
+            msg = 'I18n catalogue must contain a JSON object at the top level.'
+            raise I18nConfigurationError(msg)
 
         return data
 
 
 def configure_translator(
         *,
-        path: Optional[Union[str, Path]] = None,
-        locale: Optional[str] = None,
+        path: str | Path | None = None,
+        locale: str | None = None,
 ) -> None:
     """
     Store manual overrides so they can take precedence during translator discovery.
