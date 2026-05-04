@@ -1,0 +1,51 @@
+name: Auto Release on Develop
+
+on:
+  push:
+    branches:
+      - 'develop' # Triggers on a direct push or PR merge into develop
+
+permissions:
+  contents: write # Required to create tags and releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from __init__.py
+        id: get_version
+        # Using Python and regex for reliable version extraction,
+        # regardless of whether single ('') or double ("") quotes are used.
+        run: |
+          VERSION=$(python -c "import re; print(re.search(r\"__version__\s*=\s*['\"]([^'\"]+)['\"]\", open('mops/__init__.py').read()).group(1))")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Found version: $VERSION"
+
+      - name: Check if Release/Tag already exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Checking if this release already exists so the pipeline doesn't fail
+        # if you merged a PR but forgot to bump the version in __init__.py
+        run: |
+          if gh release view "${{ env.VERSION }}" > /dev/null 2>&1; then
+            echo "EXISTS=true" >> $GITHUB_ENV
+            echo "Release ${{ env.VERSION }} already exists. Skipping release creation."
+          else
+            echo "EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Create Release and Tag
+        if: env.EXISTS == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Creating the release. GitHub will automatically create a tag on the commit that triggered the action (github.sha).
+        # The --generate-notes flag automatically builds a changelog from your PR titles.
+        run: |
+          gh release create "${{ env.VERSION }}" \
+            --target "${{ github.sha }}" \
+            --title "Release ${{ env.VERSION }}" \
+            --generate-notes
