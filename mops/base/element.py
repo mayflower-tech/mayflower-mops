@@ -23,10 +23,9 @@ from mops.exceptions import (
     UnexpectedValueException,
     UnsuitableArgumentsException,
 )
-from mops.keyboard_keys import KeyboardKeys
+from mops.mixins.objects.locator import Locator
 from mops.mixins.driver_mixin import DriverMixin, get_driver_wrapper_from_object
 from mops.mixins.internal_mixin import InternalMixin, get_element_info
-from mops.mixins.objects.locator import Locator
 from mops.mixins.objects.scrolls import ScrollTo, ScrollTypes, scroll_into_view_blocks
 from mops.mixins.objects.visual_comaprison_mixin import hide_before_screenshot, reveal_after_screenshot
 from mops.mixins.objects.wait_result import Result
