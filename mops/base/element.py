@@ -242,7 +242,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
 
     @classmethod
     def configure_translator(cls, *, path: str | Path, locale: str | None = None) -> I18nTranslator:
-        """Helper to configure the shared translator with a specific catalogue."""
+        """Configure the shared translator with a specific catalogue."""
         translator = cls.get_translator()
         translator.configure(path=path, locale=locale)
         return translator

@@ -8,6 +8,8 @@ from mops.mixins.objects.scrolls import ScrollTo, ScrollTypes
 from mops.utils.internal_utils import QUARTER_WAIT_EL, WAIT_EL
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from appium.webdriver.extensions.location import Location
     from appium.webdriver.webelement import WebElement as AppiumWebElement
     from PIL.Image import Image
@@ -19,6 +21,7 @@ if TYPE_CHECKING:
     from mops.mixins.objects.box import Box
     from mops.mixins.objects.locator import Locator
     from mops.mixins.objects.size import Size
+    from mops.utils.i18n_translator import I18nTranslator
 
 
 class ElementABC(MixinABC, ABC):
@@ -52,6 +55,20 @@ class ElementABC(MixinABC, ABC):
     @property
     def log_locator(self) -> str:
         """Return the element locator string for logging."""
+        raise NotImplementedError
+
+    @classmethod
+    def get_translator(cls) -> I18nTranslator:
+        """Return the active translator, instantiating a default one if required."""
+        raise NotImplementedError
+
+    @classmethod
+    def configure_translator(cls, *, path: str | Path, locale: str | None = None) -> I18nTranslator:
+        """Configure the shared translator with a specific catalogue."""
+        raise NotImplementedError
+
+    def get_translated_text(self, text: str) -> str:
+        """Return translated text or the original value when no translation found."""
         raise NotImplementedError
 
     @property

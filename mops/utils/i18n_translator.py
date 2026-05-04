@@ -10,9 +10,9 @@ try:  # pragma: no cover - Python 3.11+
     import tomllib  # type: ignore[attr-defined]
 except ModuleNotFoundError:  # pragma: no cover - fallback for Python <3.11
     try:
-        import tomli as tomllib  # type: ignore
+        import tomli as tomllib  # type: ignore[import-untyped]
     except ModuleNotFoundError:  # pragma: no cover - tomli not installed
-        tomllib = None  # type: ignore
+        tomllib = None  # type: ignore[assignment]
 
 __all__ = (
     'I18nConfigurationError',
@@ -303,7 +303,7 @@ def configure_translator(
 
     Passing no ``path`` clears the override.
     """
-    global _MANUAL_PATH, _MANUAL_LOCALE, _MANUAL_PARSED
+    global _MANUAL_PATH, _MANUAL_LOCALE, _MANUAL_PARSED  # noqa: PLW0603
 
     if path is None:
         _MANUAL_PATH = None

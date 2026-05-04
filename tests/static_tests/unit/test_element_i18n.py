@@ -8,6 +8,14 @@ import pytest
 from mops.base.element import Element
 from mops.mixins.objects.locator import Locator
 
+
+@pytest.fixture(autouse=True)
+def reset_element_translator():
+    Element._translator = None
+    yield
+    Element._translator = None
+
+
 def get_test_data():
     return {
         'button': {
@@ -15,13 +23,6 @@ def get_test_data():
         },
         'title': 'Test'  # outer attr
     }
-
-
-@pytest.fixture(autouse=True)
-def reset_element_translator():
-    Element._set_translator_for_all(None)
-    yield
-    Element._set_translator_for_all(None)
 
 
 @pytest.fixture
