@@ -15,12 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract version from __init__.py
+      - name: Extract version from __init__.py (Python fallback)
         id: get_version
-        # Using Python and regex for reliable version extraction,
-        # regardless of whether single ('') or double ("") quotes are used.
+        # Using Python and regex for reliable version extraction
         run: |
-          VERSION=$(python -c "import re; print(re.search(r\"__version__\s*=\s*['\"]([^'\"]+)['\"]\", open('mops/__init__.py').read()).group(1))")
+          VERSION=$(python -c "import re; text=open('mops/__init__.py').read(); print(re.search(r'''__version__\s*=\s*['\"]([^'\"]+)['\"]''', text).group(1))")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Found version: $VERSION"
 
