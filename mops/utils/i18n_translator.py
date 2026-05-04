@@ -29,6 +29,7 @@ _MANUAL_PATH: str | Path | None = None
 _MANUAL_LOCALE: str | None = None
 _MANUAL_PARSED = False
 
+
 class I18nConfigurationError(RuntimeError):
     """Raised when translation resources cannot be located or parsed."""
 
@@ -43,10 +44,10 @@ class I18nTranslator:
     """
 
     def __init__(
-            self,
-            *,
-            locale: str | None = None,
-            base_dir: str | Path | None = None,
+        self,
+        *,
+        locale: str | None = None,
+        base_dir: str | Path | None = None,
     ) -> None:
         """
         Initialize the translator.
@@ -294,9 +295,9 @@ class I18nTranslator:
 
 
 def configure_translator(
-        *,
-        path: str | Path | None = None,
-        locale: str | None = None,
+    *,
+    path: str | Path | None = None,
+    locale: str | None = None,
 ) -> None:
     """
     Store manual overrides so they can take precedence during translator discovery.

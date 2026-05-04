@@ -66,7 +66,7 @@ class Group(Element):
             parent=parent,
             wait=wait,
             driver_wrapper=driver_wrapper,
-            avoid_translation=avoid_translation
+            avoid_translation=avoid_translation,
         )
 
     def _modify_sub_elements(self) -> None:
