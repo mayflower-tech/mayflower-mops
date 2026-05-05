@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+from functools import wraps
+import time
+from typing import TYPE_CHECKING, Any
+
+from mops.exceptions import ContinuousWaitException
+from mops.utils.internal_utils import (
+    HALF_WAIT_EL,
+    QUARTER_WAIT_EL,
+    WAIT_EL,
+    WAIT_METHODS_DELAY,
+    increase_delay,
+    validate_silent,
+    validate_timeout,
+)
+from mops.utils.logs import LogLevel, autolog
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from mops.base.element import Element
+    from mops.mixins.objects.wait_result import Result
+
+
+def retry(exceptions: type | tuple, timeout: int = HALF_WAIT_EL) -> Callable:
+    """
+    Retry a function when specified exceptions occur.
+
+    :param exceptions: Exception or tuple of exception classes to catch and retry on.
+    :param timeout: The maximum time (in seconds) to keep retrying before giving up.
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            timestamp = None
+
+            while True:
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as exc:  # noqa: PERF203
+                    if not timestamp:
+                        timestamp = time.time()
+                    elif time.time() - timestamp >= timeout:
+                        raise
+                    autolog(
+                        f'Caught "{exc.__class__.__name__}" while executing "{func.__name__}", retrying...',
+                        level=LogLevel.WARNING,
+                    )
+
+        return wrapper
+
+    return decorator
+
+
+def wait_condition(method: Callable) -> Callable:
+    """Wrap an element wait method with polling logic until timeout or success."""
+
+    @wraps(method)
+    def wrapper(
+        self: Element,
+        *args: Any,
+        timeout: float = WAIT_EL,
+        silent: bool = False,
+        continuous: bool = False,
+        **kwargs: Any,
+    ) -> Element:
+        validate_timeout(timeout)
+        validate_silent(silent)
+
+        should_increase_delay = self.driver_wrapper.is_appium
+        delay = WAIT_METHODS_DELAY
+        is_log_needed = not silent
+        start_time = time.time()
+
+        if continuous:
+            return method(self, *args, **kwargs)
+
+        while time.time() - start_time < timeout:
+            result: Result = method(self, *args, **kwargs)
+
+            if is_log_needed:
+                self.log(result.log)
+                is_log_needed = False
+
+            if result.execution_result:
+                return self
+
+            time.sleep(delay)
+
+            if should_increase_delay:
+                delay = increase_delay(delay)
+
+        result.exc._timeout = timeout
+        raise result.exc
+
+    return wrapper
+
+
+def wait_continuous(method: Callable) -> Callable:
+    """Wrap an element wait method with continuous polling after the initial condition is met."""
+
+    @wraps(method)
+    def wrapper(
+        self: Element,
+        *args: Any,
+        silent: bool = False,
+        continuous: float | bool = False,
+        **kwargs: Any,
+    ) -> Element:
+        result: Element = method(self, *args, silent=silent, continuous=False, **kwargs)  # Wait for initial condition
+
+        if not continuous:
+            return result
+
+        should_increase_delay = self.driver_wrapper.is_appium
+        delay = WAIT_METHODS_DELAY
+        start_time = time.time()
+        is_log_needed = not silent
+        timeout = continuous if type(continuous) in (int, float) else QUARTER_WAIT_EL
+
+        while time.time() - start_time < timeout:
+            result: Result = method(self, *args, silent=silent, continuous=True, **kwargs)
+
+            if is_log_needed:
+                self.log(f'Starting continuous "{method.__name__}" for the "{self.name}" for next {timeout} seconds')
+                is_log_needed = False
+
+            if not result.execution_result:
+                msg = (
+                    f'The continuous "{method.__name__}" of the "{self.name}" is not met '
+                    f'after {(time.time() - start_time):.2f} seconds'
+                )
+                raise ContinuousWaitException(msg)
+
+            time.sleep(delay)
+
+            if should_increase_delay:
+                delay = increase_delay(delay)
+
+        return self
+
+    return wrapper
