@@ -3,12 +3,13 @@ import pytest
 from mops.base.element import Element
 from mops.self_healing import configure
 from mops.self_healing.config import get_config
-from mops.self_healing.snapshot import SnapshotStorage
+from mops.self_healing.snapshot import JsonFileSnapshotStorage
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    configure(enabled=True, score_threshold=0.5)
+def setup(tmp_path):
+    # configure(enabled=True, score_threshold=0.5, storage_directory=str(tmp_path / 'snapshots'))
+    configure(enabled=True, score_threshold=0.5, storage_directory='snapshots')
     yield
     configure(enabled=False)
 
@@ -18,7 +19,7 @@ def test_self_healing_recovers_broken_locator(second_playground_page):
     Self-healing finds row_with_cards when its locator is broken but snapshot exists.
 
     Flow:
-    1. Enable self-healing and find the real element → snapshot saved to DB.
+    1. Enable self-healing and find the real element → snapshot saved as JSON.
     2. Seed the same snapshot under a broken locator key.
     3. Access a new element that uses the broken locator → healing kicks in and
        finds the element by DOM similarity, returning the correct node.
@@ -29,7 +30,7 @@ def test_self_healing_recovers_broken_locator(second_playground_page):
     # wait_visibility → is_displayed → _find_element: element found → snapshot saved.
     row.wait_visibility(silent=True)
 
-    storage = SnapshotStorage(get_config().storage_path)
+    storage = JsonFileSnapshotStorage(get_config().storage_directory)
     real_key = f'{row.name}::{row.locator}'
     snapshot = storage.load(real_key)
     assert snapshot is not None, f'Snapshot was not saved for key: {real_key!r}'
@@ -40,7 +41,7 @@ def test_self_healing_recovers_broken_locator(second_playground_page):
 
     # Create an element that uses the broken locator but shares the same name,
     # so the healer finds the snapshot and can attempt recovery.
-    broken_row = Element(broken_locator, name=row.name, driver_wrapper=row.driver_wrapper)
+    broken_row = Element(broken_locator, name=row.name)
 
     # get_attribute → .element property → _get_element → _find_element.
     # The broken locator fails, is_healing_enabled() is True (no @no_healing here),

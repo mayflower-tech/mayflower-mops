@@ -30,7 +30,7 @@ from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
 from mops.self_healing.context import is_healing_enabled, no_healing
 from mops.self_healing.healer import Healer, HealingResult
-from mops.self_healing.snapshot import SnapshotStorage
+from mops.self_healing.snapshot import JsonFileSnapshotStorage, SnapshotStorage
 from mops.shared_utils import _scaled_screenshot, cut_log_data
 from mops.utils.decorators import retry
 from mops.utils.internal_utils import WAIT_EL, get_dict, is_group, safe_call
@@ -47,16 +47,35 @@ if TYPE_CHECKING:
     from mops.keyboard_keys import KeyboardKeys
 
 
+from pathlib import Path
+
 _storage: SnapshotStorage | None = None
 _healer: Healer | None = None
 
 
 def _get_healer() -> Healer:
+    """Lazily initialise and return the global Healer singleton.
+
+    Respects the following config scenarios:
+    * ``config.storage`` is set → use it directly (custom backend).
+    * Otherwise → create a :class:`JsonFileSnapshotStorage` using
+      ``config.storage_directory``.
+    """
     global _storage, _healer
     config = get_config()
-    if _healer is None or (_storage and _storage._db_path != config.storage_path):
-        _storage = SnapshotStorage(config.storage_path)
-        _healer = Healer(_storage, config.score_threshold)
+
+    if _healer is not None:
+        # Re-initialise if storage config changed at runtime
+        if config.storage is not None and config.storage is not _storage:
+            pass  # falls through to re-init
+        elif config.storage is None and isinstance(_storage, JsonFileSnapshotStorage):
+            if _storage._directory != Path(config.storage_directory):
+                pass  # falls through to re-init
+        else:
+            return _healer
+
+    _storage = config.storage if config.storage is not None else JsonFileSnapshotStorage(config.storage_directory)
+    _healer = Healer(_storage, config.score_threshold)
     return _healer
 
 
@@ -65,7 +84,7 @@ def _parse_healed_locator(healed_locator: str) -> tuple[str, str]:
     from selenium.webdriver.common.by import By
 
     if healed_locator.startswith('xpath='):
-        return By.XPATH, healed_locator[len('xpath='):]
+        return By.XPATH, healed_locator[len('xpath=') :]
     # Default fallback: treat as XPath
     return By.XPATH, healed_locator
 
