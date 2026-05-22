@@ -291,17 +291,25 @@ class PlayElement(ElementABC, Logging, ABC):
         """
         return self._first_element.input_value()
 
+    def _is_available(self) -> bool:
+        """
+        Check if the element is available in DOM tree (internal).
+
+        :return: :class:`bool` - :obj:`True` if present in DOM
+        """
+        return bool(len(self.element.element_handles()))
+
     def is_available(self) -> bool:
         """
         Check if the element is available in DOM tree.
 
         :return: :class:`bool` - :obj:`True` if present in DOM
         """
-        return bool(len(self.element.element_handles()))
+        return self._is_available()
 
-    def is_displayed(self, silent: bool = False) -> bool:
+    def _is_displayed(self, silent: bool = False) -> bool:
         """
-        Check if the element is displayed.
+        Check if the element is displayed (internal).
 
         :param silent: If :obj:`True`, suppresses logging.
         :type silent: bool
@@ -314,6 +322,16 @@ class PlayElement(ElementABC, Logging, ABC):
             return self._first_element.is_visible()
         except Error as exc:
             raise InvalidSelectorException(exc.message) from exc
+
+    def is_displayed(self, silent: bool = False) -> bool:
+        """
+        Check if the element is displayed.
+
+        :param silent: If :obj:`True`, suppresses logging.
+        :type silent: bool
+        :return: :class:`bool`
+        """
+        return self._is_displayed(silent=silent)
 
     def is_hidden(self, silent: bool = False) -> bool:
         """

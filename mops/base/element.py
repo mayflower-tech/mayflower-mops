@@ -31,6 +31,7 @@ from mops.mixins.objects.wait_result import Result
 from mops.playwright.play_element import PlayElement
 from mops.selenium.elements.mobile_element import MobileElement
 from mops.selenium.elements.web_element import WebElement
+from mops.self_healing.context import no_healing
 from mops.utils.decorators import wait_condition, wait_continuous
 from mops.utils.internal_utils import (
     QUARTER_WAIT_EL,
@@ -300,7 +301,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         :return: :class:`Element`
         """
         return Result(
-            execution_result=self.is_displayed(silent=True),
+            execution_result=self._is_displayed(silent=True),
             log=f'Wait until "{self.name}" becomes visible',
             exc=TimeoutException(f'"{self.name}" not visible', info=self),
         )
@@ -352,6 +353,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
 
     @wait_continuous
     @wait_condition
+    @no_healing
     def wait_hidden(
         self,
         *,
@@ -392,6 +394,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
             exc=TimeoutException(f'"{self.name}" still visible', info=self),
         )
 
+    @no_healing
     def wait_hidden_without_error(
         self,
         *,
@@ -461,7 +464,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         :return: :class:`Element`
         """
         return Result(
-            execution_result=self.is_available(),
+            execution_result=self._is_available(),
             log=f'Wait until presence of "{self.name}"',
             exc=TimeoutException(f'"{self.name}" not available in DOM', info=self),
         )

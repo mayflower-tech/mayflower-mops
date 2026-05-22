@@ -371,6 +371,18 @@ class ElementABC(MixinABC, ABC):
         """
         raise NotImplementedError
 
+    def _is_available(self) -> bool:
+        """
+        Internal check for element availability without @no_healing.
+
+        Used by :meth:`wait_availability` to allow self-healing during polling.
+        Override in backend-specific classes. Default delegates to
+        :meth:`is_available`.
+
+        :return: :class:`bool` - :obj:`True` if present in DOM
+        """
+        return self.is_available()
+
     def is_displayed(self, silent: bool = False) -> bool:
         """
         Check if the element is displayed.
@@ -380,6 +392,20 @@ class ElementABC(MixinABC, ABC):
         :return: :class:`bool`
         """
         raise NotImplementedError
+
+    def _is_displayed(self, silent: bool = False) -> bool:
+        """
+        Internal check for element display state without @no_healing.
+
+        Used by :meth:`wait_visibility` to allow self-healing during polling.
+        Override in backend-specific classes. Default delegates to
+        :meth:`is_displayed`.
+
+        :param silent: If :obj:`True`, suppresses logging.
+        :type silent: bool
+        :return: :class:`bool`
+        """
+        return self.is_displayed(silent=silent)
 
     def is_hidden(self, silent: bool = False) -> bool:
         """
