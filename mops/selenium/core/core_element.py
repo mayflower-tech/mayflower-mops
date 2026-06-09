@@ -28,9 +28,9 @@ from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
 from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
-from mops.self_healing.context import is_healing_enabled, no_healing
+from mops.self_healing.context import is_healing_for_method_enabled, no_healing
 from mops.self_healing.healer import Healer, HealingResult
-from mops.self_healing.snapshot import JsonFileSnapshotStorage, SnapshotStorage
+from mops.self_healing.snapshot import SnapshotStorage
 from mops.shared_utils import _scaled_screenshot, cut_log_data
 from mops.utils.decorators import retry
 from mops.utils.internal_utils import WAIT_EL, get_dict, is_group, safe_call
@@ -47,34 +47,19 @@ if TYPE_CHECKING:
     from mops.keyboard_keys import KeyboardKeys
 
 
-from pathlib import Path
-
 _storage: SnapshotStorage | None = None
 _healer: Healer | None = None
 
 
 def _get_healer() -> Healer:
-    """Lazily initialise and return the global Healer singleton.
-
-    Respects the following config scenarios:
-    * ``config.storage`` is set → use it directly (custom backend).
-    * Otherwise → create a :class:`JsonFileSnapshotStorage` using
-      ``config.storage_directory``.
-    """
+    """Return the global Healer singleton."""
     global _storage, _healer
+
+    if _healer:
+        return _healer
+
     config = get_config()
-
-    if _healer is not None:
-        # Re-initialise if storage config changed at runtime
-        if config.storage is not None and config.storage is not _storage:
-            pass  # falls through to re-init
-        elif config.storage is None and isinstance(_storage, JsonFileSnapshotStorage):
-            if _storage._directory != Path(config.storage_directory):
-                pass  # falls through to re-init
-        else:
-            return _healer
-
-    _storage = config.storage if config.storage is not None else JsonFileSnapshotStorage(config.storage_directory)
+    _storage = config.storage
     _healer = Healer(_storage, config.score_threshold)
     return _healer
 
@@ -576,14 +561,14 @@ class CoreElement(ElementABC, ABC):
             self._cached_element = element
             # Save snapshot for future healing
             config = get_config()
-            if config.enabled:
+            if config.save_snapshots:
+                _get_healer()
                 locator_key = f'{self.name}::{self.locator}'
-                _get_healer()  # ensure storage is initialized
                 _storage.save_from_element(locator_key, element, self.driver)
         except (SeleniumInvalidArgumentException, SeleniumInvalidSelectorException) as exc:
             self._raise_invalid_selector_exception(exc)
         except SeleniumNoSuchElementException as exc:
-            if is_healing_enabled() and get_config().enabled:
+            if is_healing_for_method_enabled() and get_config().heal_locators:
                 result = self._attempt_healing()
                 if result:
                     healed = base.find_element(*_parse_healed_locator(result.healed_locator))
@@ -600,8 +585,9 @@ class CoreElement(ElementABC, ABC):
         :return: :class:`HealingResult` if a suitable candidate was found, :obj:`None` otherwise.
         """
         try:
+            healer = _get_healer()
             locator_key = f'{self.name}::{self.locator}'
-            return _get_healer().heal(self.name, locator_key, self.locator, self.driver)
+            return healer.heal(self.name, locator_key, self.locator, self.driver)
         except Exception:
             return None
 

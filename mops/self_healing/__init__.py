@@ -2,17 +2,25 @@
 
 Quick start::
 
-    from mops.self_healing import configure
-    configure(enabled=True, score_threshold=0.75)
-
-You can also supply a custom storage backend::
-
     from mops.self_healing import configure, JsonFileSnapshotStorage
-    configure(enabled=True, storage=JsonFileSnapshotStorage('my_snapshots'))
+    configure(
+        save_snapshots=True,
+        heal_locators=True,
+        score_threshold=0.75,
+        storage=JsonFileSnapshotStorage(),
+    )
+
+Healing requires a :class:`SnapshotStorage` to be configured. The quickest way is::
+
+    configure(
+        save_snapshots=True,
+        heal_locators=True,
+        storage=JsonFileSnapshotStorage('my_snapshots'),
+    )
 """
 
 from mops.self_healing.config import configure, get_config
-from mops.self_healing.context import is_healing_enabled, no_healing
+from mops.self_healing.context import is_healing_for_method_enabled, no_healing
 from mops.self_healing.healer import Healer, HealingResult
 from mops.self_healing.snapshot import ElementSnapshot, JsonFileSnapshotStorage, SnapshotStorage
 
@@ -24,6 +32,6 @@ __all__ = [
     'SnapshotStorage',
     'configure',
     'get_config',
-    'is_healing_enabled',
+    'is_healing_for_method_enabled',
     'no_healing',
 ]

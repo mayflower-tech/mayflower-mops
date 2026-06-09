@@ -28,6 +28,6 @@ def no_healing(func: Callable) -> Callable:
     return wrapper
 
 
-def is_healing_enabled() -> bool:
+def is_healing_for_method_enabled() -> bool:
     """Return True if healing is allowed in the current thread context."""
     return getattr(_ctx, 'enabled', True)

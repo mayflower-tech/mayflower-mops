@@ -2,16 +2,15 @@ import pytest
 
 from mops.base.element import Element
 from mops.self_healing import configure
-from mops.self_healing.config import get_config
 from mops.self_healing.snapshot import JsonFileSnapshotStorage
+from mops.self_healing.config import get_config
 
 
 @pytest.fixture(autouse=True)
-def setup(tmp_path):
-    # configure(enabled=True, score_threshold=0.5, storage_directory=str(tmp_path / 'snapshots'))
-    configure(enabled=True, score_threshold=0.5, storage_directory='snapshots')
+def setup():
+    configure(save_snapshots=True, heal_locators=True, score_threshold=0.5, storage=JsonFileSnapshotStorage())
     yield
-    configure(enabled=False)
+    configure(save_snapshots=False, heal_locators=False)
 
 
 def test_self_healing_recovers_broken_locator(second_playground_page):
@@ -27,10 +26,9 @@ def test_self_healing_recovers_broken_locator(second_playground_page):
     row = second_playground_page.row_with_cards
 
     # Find the real element so the snapshot is persisted.
-    # wait_visibility → is_displayed → _find_element: element found → snapshot saved.
     row.wait_visibility(silent=True)
 
-    storage = JsonFileSnapshotStorage(get_config().storage_directory)
+    storage = get_config().storage  # same instance used by the healer
     real_key = f'{row.name}::{row.locator}'
     snapshot = storage.load(real_key)
     assert snapshot is not None, f'Snapshot was not saved for key: {real_key!r}'

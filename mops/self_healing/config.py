@@ -11,18 +11,19 @@ if TYPE_CHECKING:
 class SelfHealingConfig:
     """Configuration for self-healing locators.
 
-    :param enabled: Enable or disable self-healing globally.
+    :param save_snapshots: When :obj:`True`, snapshots of successfully located elements
+        are saved to storage for future healing.
+    :param heal_locators: When :obj:`True`, the system attempts to heal broken locators
+        by loading saved snapshots and searching for matching elements.
     :param score_threshold: Minimum similarity score (0–1) to accept a healed locator.
-    :param storage_directory: Directory path for storing element snapshot JSON files.
-        Ignored when *storage* is provided.
-    :param storage: A custom :class:`SnapshotStorage` instance. When set, this
-        overrides *storage_directory*. External projects can pass their own
-        storage backend (e.g. Redis, S3, PostgreSQL) here.
+    :param storage: A :class:`SnapshotStorage` instance. When not set, storage
+        remains uninitialised and neither snapshots nor healing will work.
+        External projects can pass their own backend (Redis, S3, PostgreSQL, etc.) here.
     """
 
-    enabled: bool = False
+    save_snapshots: bool = False
+    heal_locators: bool = False
     score_threshold: float = 0.7
-    storage_directory: str = '.self_healing_snapshots'
     storage: SnapshotStorage | None = None
 
 
@@ -34,9 +35,21 @@ def configure(**kwargs: object) -> None:
 
     Example::
 
-        from mops.self_healing import configure
-        configure(enabled=True, score_threshold=0.8, storage_directory='snapshots')
-        configure(storage=MyCustomStorage())  # custom backend
+        from mops.self_healing import configure, JsonFileSnapshotStorage
+
+        # Save snapshots but don't heal (data collection)
+        configure(save_snapshots=True)
+
+        # Full healing: save snapshots AND heal broken locators
+        configure(
+            save_snapshots=True,
+            heal_locators=True,
+            score_threshold=0.75,
+            storage=JsonFileSnapshotStorage('my_snapshots'),
+        )
+
+        # Custom backend
+        configure(storage=MyCustomStorage())
     """
     for key, value in kwargs.items():
         setattr(_config, key, value)
