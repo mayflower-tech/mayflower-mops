@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any
 
@@ -64,6 +65,26 @@ return (function(el) {
 """
 
 
+# Each rule: (attribute_name, compiled_regex, replacement)
+# - attribute_name: attribute to apply to, or None for text
+# - replacement: None means token-removal (split by spaces, drop matching tokens),
+#   '' means remove attribute entirely, str means re.sub(replacement)
+_DEFAULT_NORMALIZATION_RULES: list[tuple[str | None, re.Pattern, str | None]] = [
+    # CSS-module hashes: Button_nameHash__xy
+    ('class', re.compile(r'[a-zA-Z]+[_-][a-fA-F0-9]{5,10}__[a-zA-Z0-9]{1,5}'), None),
+    # Auto-generated suffixes: #sb, #rdT
+    ('class', re.compile(r'^#\w{1,10}$'), None),
+    # Dynamic/state classes aligned with locator_generator._DYNAMIC_CLASS_PREFIXES
+    ('class', re.compile(r'^(js-|is-|has-|active|disabled|selected|open|closed)$'), None),
+    # Purely numeric IDs
+    ('id', re.compile(r'^\d+$'), ''),
+    # Numeric suffix in IDs: user-12345 -> user-
+    ('id', re.compile(r'-\d+$'), ''),
+    # Vue scoped data attributes
+    (None, re.compile(r'^data-v-'), ''),
+]
+
+
 class SnapshotStorage(ABC):
     """Abstract snapshot storage for element snapshots.
 
@@ -74,6 +95,7 @@ class SnapshotStorage(ABC):
 
     def __init__(self) -> None:
         self._saved_this_session: set[str] = set()
+        self._normalization_rules = list(_DEFAULT_NORMALIZATION_RULES)
 
     def save_from_element(self, locator_key: str, web_element: object, driver: object) -> None:
         """Extract snapshot from a live web element and persist it."""
@@ -94,8 +116,91 @@ class SnapshotStorage(ABC):
             siblings=raw['siblings'],
         )
 
+        snapshot = self._normalize_snapshot(snapshot)
         self.save(locator_key, snapshot)
         self._saved_this_session.add(locator_key)
+
+    def set_normalization_rules(self, rules: list[tuple[str | None, re.Pattern, str | None]]) -> None:
+        """Replace the default normalization rules with custom ones.
+
+        Each rule is ``(attribute_name_or_None, compiled_regex, replacement)``:
+
+        * ``attribute_name`` — attribute key to match (``'class'``, ``'id'``, etc.)
+          or ``None`` to match any attribute name.
+        * ``compiled_regex`` — compiled :class:`re.Pattern` to match against the
+          attribute value (or token, in token-removal mode).
+        * ``replacement`` — if ``None``, the rule runs in **token-removal mode**
+          (value is split on whitespace, matching tokens are dropped). If a string,
+          ``regex.sub(replacement, value)`` is applied. If the result is empty,
+          the attribute is removed entirely.
+
+        Calling this method replaces **all** rules. To extend defaults::
+
+            storage = JsonFileSnapshotStorage()
+            storage.set_normalization_rules([
+                *storage._normalization_rules,
+                ('data-track', re.compile(r'.*'), ''),
+            ])
+        """
+        self._normalization_rules = list(rules)
+
+    def normalize_locator_key(self, key: str) -> str:
+        r"""Normalize dynamic data in a locator key string.
+
+        Applies all rules where ``replacement`` is a string (not ``None``).
+        Token-removal rules (``replacement=None``) are skipped since a locator
+        key is a flat string, not a whitespace-separated list of tokens.
+
+        Calling this ensures that e.g. ``#user-12345`` and ``#user-67890``
+        produce the same storage key when a ``-\d+`` rule is configured.
+        """
+        for _attr_name, pattern, replacement in self._normalization_rules:
+            if replacement is None:
+                continue  # skip token-removal rules
+            key = pattern.sub(replacement, key)
+        return key
+
+    def _normalize_snapshot(self, snapshot: ElementSnapshot) -> ElementSnapshot:
+        """Return a normalized copy of *snapshot* with dynamic data cleaned out."""
+        return ElementSnapshot(
+            tag=snapshot.tag,
+            attributes=self._normalize_attrs(snapshot.attributes),
+            text=re.sub(r'\s+', ' ', snapshot.text).strip(),
+            parent_tag=snapshot.parent_tag,
+            parent_attributes=self._normalize_attrs(snapshot.parent_attributes),
+            siblings=[{**s, 'attrs': self._normalize_attrs(s.get('attrs', {}))} for s in snapshot.siblings],
+        )
+
+    def _normalize_attrs(self, attrs: dict[str, str]) -> dict[str, str]:
+        """Return a new dict with normalization rules applied to *attrs*."""
+        result = {}
+        for key, value in attrs.items():
+            normalized = value
+            for attr_name, pattern, replacement in self._normalization_rules:
+                if attr_name is not None and key != attr_name:
+                    continue
+
+                if replacement is None:
+                    # Token-removal mode (for class etc.)
+                    tokens = normalized.split()
+                    filtered = [t for t in tokens if not pattern.search(t)]
+                    if len(filtered) != len(tokens):
+                        normalized = ' '.join(filtered)
+                elif attr_name is None:
+                    # Rule targets attribute name (e.g. data-v-*) —
+                    # remove the entire attribute when the key matches
+                    if pattern.search(key):
+                        normalized = ''
+                        break
+                elif pattern.search(normalized):
+                    # Standard re.sub on value
+                    normalized = pattern.sub(replacement, normalized)
+                    if not normalized:
+                        break
+
+            if normalized:
+                result[key] = normalized
+        return result
 
     @abstractmethod
     def save(self, locator_key: str, snapshot: ElementSnapshot) -> None:
