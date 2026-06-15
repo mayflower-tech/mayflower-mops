@@ -563,8 +563,7 @@ class CoreElement(ElementABC, ABC):
             config = get_config()
             if config.save_snapshots:
                 _get_healer()
-                locator_key = _storage.normalize_locator_key(f'{self.name}::{self.locator}')
-                _storage.save_from_element(locator_key, element, self.driver)
+                _storage.save_from_element(self, element, self.driver)
         except (SeleniumInvalidArgumentException, SeleniumInvalidSelectorException) as exc:
             self._raise_invalid_selector_exception(exc)
         except SeleniumNoSuchElementException as exc:

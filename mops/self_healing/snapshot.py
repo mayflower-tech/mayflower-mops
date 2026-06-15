@@ -8,7 +8,10 @@ import json
 from pathlib import Path
 import re
 import sqlite3
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from mops.base.element import Element
 
 
 @dataclass
@@ -76,12 +79,6 @@ _DEFAULT_NORMALIZATION_RULES: list[tuple[str | None, re.Pattern, str | None]] = 
     ('class', re.compile(r'^#\w{1,10}$'), None),
     # Dynamic/state classes aligned with locator_generator._DYNAMIC_CLASS_PREFIXES
     ('class', re.compile(r'^(js-|is-|has-|active|disabled|selected|open|closed)$'), None),
-    # Purely numeric IDs
-    ('id', re.compile(r'^\d+$'), ''),
-    # Numeric suffix in IDs: user-12345 -> user-
-    ('id', re.compile(r'-\d+$'), ''),
-    # Vue scoped data attributes
-    (None, re.compile(r'^data-v-'), ''),
 ]
 
 
@@ -97,8 +94,20 @@ class SnapshotStorage(ABC):
         self._saved_this_session: set[str] = set()
         self._normalization_rules = list(_DEFAULT_NORMALIZATION_RULES)
 
-    def save_from_element(self, locator_key: str, web_element: object, driver: object) -> None:
+    def _extract_full_locator_key(self, element: Element):
+        raw_locator_key = element.locator if element.name == element.locator else f'{element.name}::{element.locator}'
+
+        if element.parent:
+            raw_locator_key += f' -> {self._extract_full_locator_key(element.parent)}'
+
+        locator_key = self.normalize_locator_key(raw_locator_key)
+
+        return locator_key
+
+    def save_from_element(self, element: Element, web_element: object, driver: object) -> None:
         """Extract snapshot from a live web element and persist it."""
+        locator_key = self._extract_full_locator_key(element)
+
         if locator_key in self._saved_this_session:
             return
 

@@ -1,8 +1,58 @@
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 
 from mops.self_healing.snapshot import ElementSnapshot, JsonFileSnapshotStorage
+
+# ---------------------------------------------------------------------------
+# _extract_full_locator_key
+# ---------------------------------------------------------------------------
+
+
+def _make_element(name: str, locator: str, parent=None):
+    """Build a minimal fake element for key-extraction tests."""
+    return SimpleNamespace(name=name, locator=locator, parent=parent)
+
+
+def test_extract_key_without_parent():
+    """Element without parent uses name::locator (or bare locator if name matches)."""
+    storage = JsonFileSnapshotStorage()
+
+    # name != locator → name::locator
+    el = _make_element('Submit button', '#submit')
+    assert storage._extract_full_locator_key(el) == 'Submit button::#submit'
+
+    # name == locator → bare locator
+    el = _make_element('.row', '.row')
+    assert storage._extract_full_locator_key(el) == '.row'
+
+
+def test_extract_key_with_parent():
+    """Parent context is appended with ' -> ' separator."""
+    storage = JsonFileSnapshotStorage()
+
+    grandparent = _make_element('Section', '#section')
+    parent = _make_element('Form', '#form', parent=grandparent)
+    child = _make_element('Submit button', '#submit', parent=parent)
+
+    result = storage._extract_full_locator_key(child)
+    assert result == 'Submit button::#submit -> Form::#form -> Section::#section'
+
+
+def test_extract_key_with_parent_normalized():
+    """Dynamic data in any part of the chain is normalized."""
+    storage = JsonFileSnapshotStorage()
+
+    # The default class-only rules don't affect locator keys (token-removal skipped),
+    # so no normalization happens with defaults. But custom rules should apply.
+    parent = _make_element('Form', '#form')
+    child = _make_element('User card', '#user-12345', parent=parent)
+
+    # Default rules don't strip #user-12345 because id rules were removed
+    result = storage._extract_full_locator_key(child)
+    assert 'User card::#user-12345' in result
+
 
 # ---------------------------------------------------------------------------
 # normalize_locator_key
@@ -15,27 +65,7 @@ def test_normalize_locator_key_preserves_clean_key():
     assert storage.normalize_locator_key('MyElement::.row') == 'MyElement::.row'
 
 
-def test_normalize_locator_key_strips_numeric_id_suffix():
-    r"""``#user-12345`` → ``#user``  (rule: id, -\d+$  — the ``-`` is part of the match)."""
-    storage = JsonFileSnapshotStorage()
-    assert storage.normalize_locator_key('MyElement::#user-12345') == 'MyElement::#user'
-
-
-def test_normalize_locator_key_purely_numeric_id_rule_skipped():
-    r"""``^\d+$`` is anchor-bound, it won't match mid-string in a flat key — expected."""
-    storage = JsonFileSnapshotStorage()
-    # A locator like #12345 does NOT get normalized by the ^\d+$ rule
-    assert storage.normalize_locator_key('MyElement::#12345') == 'MyElement::#12345'
-
-
-def test_normalize_locator_key_vue_rule_skipped_mid_string():
-    r"""``^data-v-`` is anchor-bound, doesn't match mid-string — expected."""
-    storage = JsonFileSnapshotStorage()
-    result = storage.normalize_locator_key('MyElement::[data-v-abc123]')
-    assert 'data-v-abc123' in result
-
-
-def test_normalize_locator_key_class_token_removal_rules_skipped():
+def test_normalize_locator_key_class_removal_rules_skipped():
     """Token-removal rules (replacement=None) are not applied to locator keys."""
     storage = JsonFileSnapshotStorage()
     result = storage.normalize_locator_key('MyElement::.btn.active')
@@ -80,50 +110,6 @@ def test_normalize_attrs_preserves_normal_class():
 
 
 # ---------------------------------------------------------------------------
-# _normalize_attrs — id normalization
-# ---------------------------------------------------------------------------
-
-
-def test_normalize_attrs_removes_numeric_id():
-    """``id='12345'`` is removed (entirely numeric)."""
-    storage = JsonFileSnapshotStorage()
-    attrs = {'id': '12345'}
-    result = storage._normalize_attrs(attrs)
-    assert 'id' not in result
-
-
-def test_normalize_attrs_strips_numeric_id_suffix():
-    r"""``id='user-12345'`` → ``id='user'`` (the ``-`` is part of the ``-\d+$`` match)."""
-    storage = JsonFileSnapshotStorage()
-    attrs = {'id': 'user-12345'}
-    result = storage._normalize_attrs(attrs)
-    assert result['id'] == 'user'
-
-
-def test_normalize_attrs_preserves_meaningful_id():
-    """``id='submit-btn'`` stays."""
-    storage = JsonFileSnapshotStorage()
-    attrs = {'id': 'submit-btn'}
-    result = storage._normalize_attrs(attrs)
-    assert result['id'] == 'submit-btn'
-
-
-# ---------------------------------------------------------------------------
-# _normalize_attrs — Vue scoped data attributes
-# ---------------------------------------------------------------------------
-
-
-def test_normalize_attrs_removes_vue_data_attributes():
-    """``data-v-*`` attributes removed regardless of value."""
-    storage = JsonFileSnapshotStorage()
-    attrs = {'data-v-abc123': '', 'data-v-def456': 'some-value', 'data-testid': 'submit'}
-    result = storage._normalize_attrs(attrs)
-    assert 'data-v-abc123' not in result
-    assert 'data-v-def456' not in result
-    assert result['data-testid'] == 'submit'
-
-
-# ---------------------------------------------------------------------------
 # _normalize_attrs — edge cases
 # ---------------------------------------------------------------------------
 
@@ -137,7 +123,7 @@ def test_normalize_attrs_empty():
 def test_normalize_attrs_unknown_attrs_preserved():
     """Attributes without matching rules are preserved."""
     storage = JsonFileSnapshotStorage()
-    attrs = {'aria-label': 'Close', 'role': 'button', 'data-test': 'submit'}
+    attrs = {'aria-label': 'Close', 'id': 'submit-btn', 'data-test': 'submit'}
     result = storage._normalize_attrs(attrs)
     assert result == attrs
 
@@ -161,7 +147,6 @@ def test_normalize_snapshot_cleans_attrs_and_text():
         parent_tag='form',
         parent_attributes={
             'class': 'form-wrapper js-form',
-            'data-v-xyz': '',
         },
         siblings=[
             {'tag': 'span', 'text': 'Hint', 'attrs': {'class': 'helper #rdT'}},
@@ -171,16 +156,14 @@ def test_normalize_snapshot_cleans_attrs_and_text():
     assert result.tag == 'button'
     # Class tokens cleaned (active and #sb removed)
     assert result.attributes['class'] == 'btn'
-    # ID suffix stripped (the ``-`` is part of the match)
-    assert result.attributes['id'] == 'submit'
+    # id has no default rule — preserved (was removed from defaults by user)
+    assert result.attributes['id'] == 'submit-42'
     # Non-matching attrs preserved
     assert result.attributes['aria-label'] == 'Submit'
     # Text whitespace normalized
     assert result.text == 'Click Me'
-    # Parent attrs cleaned
-    # ``js-form`` is not an exact match for the ``^(js-|...)`` rule — kept
+    # Parent attrs: ``js-form`` not exact match for ``^(js-|...)`` — kept
     assert result.parent_attributes['class'] == 'form-wrapper js-form'
-    assert 'data-v-xyz' not in result.parent_attributes
     # Sibling attrs cleaned
     assert result.siblings[0]['attrs']['class'] == 'helper'
 
@@ -225,3 +208,16 @@ def test_custom_rules_apply_to_locator_key():
         (None, re.compile(r'custom-'), ''),
     ])
     assert storage.normalize_locator_key('El::#custom-123') == 'El::#123'
+
+
+def test_custom_rules_affect_extracted_key():
+    """Custom rules also apply to _extract_full_locator_key via normalize_locator_key."""
+    storage = JsonFileSnapshotStorage()
+    storage.set_normalization_rules([
+        (None, re.compile(r'-\d+'), ''),
+    ])
+    parent = _make_element('Form', '#form-99')
+    child = _make_element('User card', '#user-12345', parent=parent)
+
+    result = storage._extract_full_locator_key(child)
+    assert result == 'User card::#user -> Form::#form'
