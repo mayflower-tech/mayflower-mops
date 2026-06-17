@@ -29,7 +29,7 @@ from mops.mixins.objects.size import Size
 from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
 from mops.self_healing.context import is_healing_for_method_enabled, no_healing
-from mops.self_healing.healer import Healer, HealingResult
+from mops.self_healing.healer import Healer, SuccessHealingResult
 from mops.self_healing.snapshot import SnapshotStorage
 from mops.shared_utils import _scaled_screenshot, cut_log_data
 from mops.utils.decorators import retry
@@ -60,7 +60,12 @@ def _get_healer() -> Healer:
 
     config = get_config()
     _storage = config.storage
-    _healer = Healer(_storage, config.score_threshold)
+    _healer = Healer(
+        _storage,
+        config.score_threshold,
+        on_healing_success=config.on_healing_success,
+        on_healing_failure=config.on_healing_failure,
+    )
     return _healer
 
 
@@ -577,11 +582,11 @@ class CoreElement(ElementABC, ABC):
         else:
             return element
 
-    def _attempt_healing(self) -> HealingResult | None:
+    def _attempt_healing(self) -> SuccessHealingResult | None:
         """
         Attempt to heal a failed element lookup using the self-healing subsystem.
 
-        :return: :class:`HealingResult` if a suitable candidate was found, :obj:`None` otherwise.
+        :return: :class:`SuccessHealingResult` if a suitable candidate was found, :obj:`None` otherwise.
         """
         try:
             healer = _get_healer()

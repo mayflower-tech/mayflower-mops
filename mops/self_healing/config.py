@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from mops.self_healing.healer import FailedHealingResult, SuccessHealingResult
     from mops.self_healing.snapshot import SnapshotStorage
 
 
@@ -19,12 +22,18 @@ class SelfHealingConfig:
     :param storage: A :class:`SnapshotStorage` instance. When not set, storage
         remains uninitialised and neither snapshots nor healing will work.
         External projects can pass their own backend (Redis, S3, PostgreSQL, etc.) here.
+    :param on_healing_success: Optional callback invoked when a broken locator has been
+        healed. Receives the :class:`SuccessHealingResult`.
+    :param on_healing_failure: Optional callback invoked when healing was attempted
+        but couldn't find a matching element. Receives the :class:`FailedHealingResult`.
     """
 
     save_snapshots: bool = False
     heal_locators: bool = False
     score_threshold: float = 0.7
     storage: SnapshotStorage | None = None
+    on_healing_success: Callable[[SuccessHealingResult], None] | None = None
+    on_healing_failure: Callable[[FailedHealingResult], None] | None = None
 
 
 _config = SelfHealingConfig()
@@ -50,6 +59,21 @@ def configure(**kwargs: object) -> None:
 
         # Custom backend
         configure(storage=MyCustomStorage())
+
+        # Callbacks for external integrations
+        def on_success(result: HealingResult) -> None:
+            metrics.send(...)
+
+        def on_failure(**kwargs: object) -> None:
+            # kwargs: element_name, locator_key, locator
+            post_comment_on_pr(kwargs['element_name'], kwargs['locator'])
+
+        configure(
+            save_snapshots=True,
+            heal_locators=True,
+            on_healing_success=on_success,
+            on_healing_failure=on_failure,
+        )
     """
     for key, value in kwargs.items():
         setattr(_config, key, value)

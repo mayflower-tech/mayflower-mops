@@ -21,15 +21,16 @@ Healing requires a :class:`SnapshotStorage` to be configured. The quickest way i
 
 from mops.self_healing.config import configure, get_config
 from mops.self_healing.context import is_healing_for_method_enabled, no_healing
-from mops.self_healing.healer import Healer, HealingResult
+from mops.self_healing.healer import FailedHealingResult, Healer, SuccessHealingResult
 from mops.self_healing.snapshot import ElementSnapshot, JsonFileSnapshotStorage, SnapshotStorage
 
 __all__ = [
     'ElementSnapshot',
+    'FailedHealingResult',
     'Healer',
-    'HealingResult',
     'JsonFileSnapshotStorage',
     'SnapshotStorage',
+    'SuccessHealingResult',
     'configure',
     'get_config',
     'is_healing_for_method_enabled',

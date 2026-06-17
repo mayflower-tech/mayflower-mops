@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 from mops.self_healing.locator_generator import generate_locator
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mops.self_healing.snapshot import ElementSnapshot, SnapshotStorage
 
 logger = logging.getLogger('mops.self_healing')
@@ -57,7 +59,7 @@ return (function(tag) {
 
 
 @dataclass
-class HealingResult:
+class SuccessHealingResult:
     element_name: str
     original_locator: str
     healed_locator: str
@@ -65,35 +67,73 @@ class HealingResult:
     page: str | None = None
 
 
+@dataclass
+class FailedHealingResult:
+    element_name: str
+    locator_key: str
+    locator: str
+    reason: str
+    error: str | None = None
+
+
 class Healer:
     """Orchestrates the self-healing process for a failed element lookup."""
 
-    def __init__(self, storage: SnapshotStorage, score_threshold: float) -> None:
+    def __init__(
+        self,
+        storage: SnapshotStorage,
+        score_threshold: float,
+        on_healing_success: Callable[[SuccessHealingResult], None] | None = None,
+        on_healing_failure: Callable[[FailedHealingResult], None] | None = None,
+    ) -> None:
         self._storage = storage
         self._score_threshold = score_threshold
+        self._on_healing_success = on_healing_success
+        self._on_healing_failure = on_healing_failure
 
-    def heal(self, element_name: str, locator_key: str, locator: str, driver: Any) -> HealingResult | None:
+    def _fail(
+        self, reason: str, element_name: str, locator_key: str, locator: str, exc: BaseException | None = None
+    ) -> None:
+        """Fire failure callback and return None."""
+        result = FailedHealingResult(
+            element_name=element_name,
+            locator_key=locator_key,
+            locator=locator,
+            reason=reason,
+            error=str(exc) if exc else None,
+        )
+        if self._on_healing_failure:
+            self._on_healing_failure(result)
+
+    def _succeed(self, result: SuccessHealingResult) -> SuccessHealingResult:
+        """Fire success callback and return the result."""
+        if self._on_healing_success:
+            self._on_healing_success(result)
+        return result
+
+    def heal(self, element_name: str, locator_key: str, locator: str, driver: Any) -> SuccessHealingResult | None:
         """Try to find a healed locator for a failed element lookup.
 
         :param element_name: Human-readable element name for logging.
         :param locator_key: Storage key used to load the saved snapshot.
         :param locator: The original locator string (for the result record).
         :param driver: Selenium WebDriver instance.
-        :return: :class:`HealingResult` if healed, ``None`` otherwise.
+        :return: :class:`SuccessHealingResult` if healed, ``None`` otherwise.
         """
         snapshot = self._storage.load(locator_key)
+
         if not snapshot:
             logger.debug('Self-healing: no snapshot for "%s", skipping', element_name)
-            return None
+            return self._fail('no-snapshot', element_name, locator_key, locator)
 
         try:
             candidates_data: list[dict] = driver.execute_script(_GET_CANDIDATES_JS, snapshot.tag)
         except Exception as exc:
             logger.debug('Self-healing: failed to get candidates for "%s": %s', element_name, exc)
-            return None
+            return self._fail('candidates-script-error', element_name, locator_key, locator, exc=exc)
 
         if not candidates_data:
-            return None
+            return self._fail('no-candidates', element_name, locator_key, locator)
 
         best_score = 0.0
         best_index = -1
@@ -111,7 +151,7 @@ class Healer:
                 self._score_threshold,
                 element_name,
             )
-            return None
+            return self._fail('below-threshold', element_name, locator_key, locator)
 
         # Get the actual WebElement by index among elements of the same tag
         try:
@@ -119,14 +159,14 @@ class Healer:
 
             web_elements = driver.find_elements(By.TAG_NAME, snapshot.tag)
             if best_index >= len(web_elements):
-                return None
+                return self._fail('index-out-of-bounds', element_name, locator_key, locator)
             healed_web_element = web_elements[best_index]
             healed_locator = generate_locator(healed_web_element, driver)
         except Exception as exc:
             logger.debug('Self-healing: failed to generate locator for "%s": %s', element_name, exc)
-            return None
+            return self._fail('generate-locator-error', element_name, locator_key, locator, exc=exc)
 
-        result = HealingResult(
+        result = SuccessHealingResult(
             element_name=element_name,
             original_locator=locator,
             healed_locator=healed_locator,
@@ -141,7 +181,7 @@ class Healer:
             best_score,
         )
 
-        return result
+        return self._succeed(result)
 
 
 def _score_similarity(candidate: dict[str, Any], snapshot: ElementSnapshot) -> float:
