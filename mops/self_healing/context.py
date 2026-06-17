@@ -11,7 +11,7 @@ _ctx = threading.local()
 
 
 def no_healing(func: Callable) -> Callable:
-    """Decorator that disables self-healing for the duration of the wrapped method.
+    """Disable self-healing for the duration of the wrapped method.
 
     Use on methods where element not being found is an acceptable outcome,
     e.g. is_displayed(), is_hidden(), wait_hidden().

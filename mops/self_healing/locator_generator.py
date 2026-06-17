@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from selenium.common.exceptions import WebDriverException
+
 _GET_POSITIONAL_XPATH_JS = """
 return (function(el) {
     var parts = [];
@@ -21,6 +23,8 @@ _DYNAMIC_CLASS_PREFIXES = ('js-', 'is-', 'has-', 'active', 'disabled', 'selected
 
 _TEST_ATTRS = ('data-testid', 'data-test', 'data-cy', 'data-qa', 'data-automation-id')
 
+_MAX_TEXT_LENGTH = 50
+
 
 def generate_locator(web_element: object, driver: object) -> str:
     """Generate a stable XPath locator from a live Selenium WebElement.
@@ -38,54 +42,57 @@ def generate_locator(web_element: object, driver: object) -> str:
                 attrs[attr_name] = val.strip()
 
         text = (web_element.text or '').strip()
-    except Exception:
+    except WebDriverException:
         return _positional_xpath(web_element, driver)
+
+    providers: list[str] = []
 
     # id (unique by spec)
     el_id = attrs.get('id', '')
     if el_id and ' ' not in el_id:
-        return f'xpath=//*[@id="{el_id}"]'
+        providers.append(f'xpath=//*[@id="{el_id}"]')
 
     # data-* test attributes
     for test_attr in _TEST_ATTRS:
         val = attrs.get(test_attr, '')
         if val:
-            return f'xpath=//*[@{test_attr}="{val}"]'
+            providers.append(f'xpath=//*[@{test_attr}="{val}"]')
 
     # name
     name = attrs.get('name', '')
     if name:
-        return f'xpath=//{tag}[@name="{name}"]'
+        providers.append(f'xpath=//{tag}[@name="{name}"]')
 
     # aria-label
     aria = attrs.get('aria-label', '')
     if aria:
         escaped = aria.replace('"', '\\"')
-        return f'xpath=//*[@aria-label="{escaped}"]'
+        providers.append(f'xpath=//*[@aria-label="{escaped}"]')
 
     # visible text (short, single-line)
-    if text and len(text) <= 50 and '\n' not in text:
+    if text and len(text) <= _MAX_TEXT_LENGTH and '\n' not in text:
         escaped = text.replace('"', '\\"')
-        return f'xpath=//{tag}[normalize-space(.)="{escaped}"]'
+        providers.append(f'xpath=//{tag}[normalize-space(.)="{escaped}"]')
 
     # type + tag
     el_type = attrs.get('type', '')
     if el_type:
-        return f'xpath=//{tag}[@type="{el_type}"]'
+        providers.append(f'xpath=//{tag}[@type="{el_type}"]')
 
     # stable class (filter out dynamic-looking tokens)
     cls = attrs.get('class', '')
     if cls:
         stable = [c for c in cls.split() if not any(c.lower().startswith(p) for p in _DYNAMIC_CLASS_PREFIXES)]
         if stable:
-            return f'xpath=//{tag}[contains(@class, "{stable[0]}")]'
+            providers.append(f'xpath=//{tag}[contains(@class, "{stable[0]}")]')
 
-    return _positional_xpath(web_element, driver)
+    return providers[0] if providers else _positional_xpath(web_element, driver)
 
 
 def _positional_xpath(web_element: object, driver: object) -> str:
     try:
         path: str = driver.execute_script(_GET_POSITIONAL_XPATH_JS, web_element)
-        return f'xpath={path}'
-    except Exception:
+    except WebDriverException:
         return f'xpath=//{web_element.tag_name}'
+    else:
+        return f'xpath={path}'

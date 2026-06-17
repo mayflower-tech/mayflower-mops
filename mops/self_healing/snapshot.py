@@ -10,6 +10,8 @@ import re
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
+from selenium.common.exceptions import WebDriverException
+
 if TYPE_CHECKING:
     from mops.base.element import Element
 
@@ -94,15 +96,13 @@ class SnapshotStorage(ABC):
         self._saved_this_session: set[str] = set()
         self._normalization_rules = list(_DEFAULT_NORMALIZATION_RULES)
 
-    def _extract_full_locator_key(self, element: Element):
+    def _extract_full_locator_key(self, element: Element) -> str:
         raw_locator_key = element.locator if element.name == element.locator else f'{element.name}::{element.locator}'
 
         if element.parent:
             raw_locator_key += f' -> {self._extract_full_locator_key(element.parent)}'
 
-        locator_key = self.normalize_locator_key(raw_locator_key)
-
-        return locator_key
+        return self.normalize_locator_key(raw_locator_key)
 
     def save_from_element(self, element: Element, web_element: object, driver: object) -> None:
         """Extract snapshot from a live web element and persist it."""
@@ -113,7 +113,7 @@ class SnapshotStorage(ABC):
 
         try:
             raw = driver.execute_script(_GET_ELEMENT_SNAPSHOT_JS, web_element)
-        except Exception:
+        except WebDriverException:
             return
 
         snapshot = ElementSnapshot(

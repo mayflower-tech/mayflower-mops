@@ -11,6 +11,7 @@ from selenium.common.exceptions import (
     StaleElementReferenceException as SeleniumStaleElementReferenceException,
     WebDriverException as SeleniumWebDriverException,
 )
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 
 from mops.abstraction.element_abc import ElementABC
@@ -30,7 +31,6 @@ from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
 from mops.self_healing.context import is_healing_for_method_enabled, no_healing
 from mops.self_healing.healer import Healer, SuccessHealingResult
-from mops.self_healing.snapshot import SnapshotStorage
 from mops.shared_utils import _scaled_screenshot, cut_log_data
 from mops.utils.decorators import retry
 from mops.utils.internal_utils import WAIT_EL, get_dict, is_group, safe_call
@@ -45,34 +45,35 @@ if TYPE_CHECKING:
 
     from mops.base.element import Element
     from mops.keyboard_keys import KeyboardKeys
+    from mops.self_healing.snapshot import SnapshotStorage
 
 
-_storage: SnapshotStorage | None = None
-_healer: Healer | None = None
+class _HealerState:
+    """Module-level state for the healer singleton."""
+
+    storage: SnapshotStorage | None = None
+    healer: Healer | None = None
 
 
 def _get_healer() -> Healer:
     """Return the global Healer singleton."""
-    global _storage, _healer
-
-    if _healer:
-        return _healer
+    if _HealerState.healer:
+        return _HealerState.healer
 
     config = get_config()
-    _storage = config.storage
-    _healer = Healer(
-        _storage,
+    _HealerState.storage = config.storage
+    _HealerState.healer = Healer(
+        _HealerState.storage,
         config.score_threshold,
+        attribute_weights=config.attribute_weights,
         on_healing_success=config.on_healing_success,
         on_healing_failure=config.on_healing_failure,
     )
-    return _healer
+    return _HealerState.healer
 
 
 def _parse_healed_locator(healed_locator: str) -> tuple[str, str]:
     """Convert a ``xpath=//...`` prefixed locator into a ``(By, value)`` tuple."""
-    from selenium.webdriver.common.by import By
-
     if healed_locator.startswith('xpath='):
         return By.XPATH, healed_locator[len('xpath=') :]
     # Default fallback: treat as XPath
@@ -568,15 +569,21 @@ class CoreElement(ElementABC, ABC):
             config = get_config()
             if config.save_snapshots:
                 _get_healer()
-                _storage.save_from_element(self, element, self.driver)
+                _HealerState.storage.save_from_element(self, element, self.driver)
         except (SeleniumInvalidArgumentException, SeleniumInvalidSelectorException) as exc:
             self._raise_invalid_selector_exception(exc)
         except SeleniumNoSuchElementException as exc:
             if is_healing_for_method_enabled() and get_config().heal_locators:
                 result = self._attempt_healing()
                 if result:
-                    healed = base.find_element(*_parse_healed_locator(result.healed_locator))
+                    healed_locator_type, healed_locator_value = _parse_healed_locator(result.healed_locator)
+                    healed = base.find_element(healed_locator_type, healed_locator_value)
+                    # Persist healed locator so subsequent lookups don't re-heal
+                    self.locator_type = healed_locator_type
+                    self.locator = healed_locator_value
                     self._cached_element = healed
+                    if get_config().save_snapshots:
+                        _HealerState.storage.save_from_element(self, healed, self.driver)
                     return healed
             raise NoSuchElementException(exc.msg) from exc
         else:
@@ -590,9 +597,12 @@ class CoreElement(ElementABC, ABC):
         """
         try:
             healer = _get_healer()
-            locator_key = _storage.normalize_locator_key(f'{self.name}::{self.locator}')
-            return healer.heal(self.name, locator_key, self.locator, self.driver)
-        except Exception:
+            locator_key = _HealerState.storage.normalize_locator_key(f'{self.name}::{self.locator}')
+            result = healer.heal(self.name, locator_key, self.locator, self.driver)
+            if type(result) is SuccessHealingResult:
+                return result
+        except Exception as exc:  # noqa: BLE001
+            self.log(f'Self-healing failed with unexpected exception: {exc}', level='warning')
             return None
 
     def _find_elements(self, wait_parent: bool = False) -> list[SeleniumWebElement | AppiumWebElement]:

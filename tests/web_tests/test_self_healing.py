@@ -48,3 +48,40 @@ def test_self_healing_recovers_broken_locator(second_playground_page):
 
     assert cls is not None, 'Self-healing did not recover the element'
     assert 'row' in cls
+
+
+def test_self_healing_recovery_after_class_change(second_playground_page):
+    """
+    Self-healing recovers an element whose class was changed in DOM.
+
+    Flow:
+    1. Find row_with_cards → snapshot saved.
+    2. Change the ``class`` attribute via JS, breaking the ``.row`` locator.
+    3. Create a new element with the broken locator.
+    4. ``wait_visibility`` triggers polling → healing finds the element
+       by DOM similarity (snapshot matching).
+    """
+    row = second_playground_page.row_with_cards
+
+    # Find the real element so the snapshot is persisted
+    row.wait_visibility(silent=True)
+
+    storage = get_config().storage
+    real_key = f'{row.name}::{row.locator}'
+    assert storage.load(real_key) is not None
+
+    # Break the locator by changing the class of ALL .row elements
+    driver = second_playground_page.driver
+    driver.execute_script("""
+        var elements = document.querySelectorAll('.row');
+        for (var i = 0; i < elements.length; i++) {
+            elements[i].className = 'broken-row';
+        }
+    """)
+
+    # wait_visibility triggers element lookup → healing should recover
+    row.wait_visibility(silent=True)
+
+    cls = row.get_attribute('class', silent=True)
+    assert cls is not None, 'Self-healing did not recover the element'
+    assert 'broken-row' in cls

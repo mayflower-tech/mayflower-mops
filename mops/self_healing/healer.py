@@ -4,6 +4,9 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, Any
 
+from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.common.by import By
+
 from mops.self_healing.locator_generator import generate_locator
 
 if TYPE_CHECKING:
@@ -83,11 +86,13 @@ class Healer:
         self,
         storage: SnapshotStorage,
         score_threshold: float,
+        attribute_weights: dict[str, float] | None = None,
         on_healing_success: Callable[[SuccessHealingResult], None] | None = None,
         on_healing_failure: Callable[[FailedHealingResult], None] | None = None,
     ) -> None:
         self._storage = storage
         self._score_threshold = score_threshold
+        self._attribute_weights = attribute_weights or _ATTRIBUTE_WEIGHTS
         self._on_healing_success = on_healing_success
         self._on_healing_failure = on_healing_failure
 
@@ -95,12 +100,15 @@ class Healer:
         self, reason: str, element_name: str, locator_key: str, locator: str, exc: BaseException | None = None
     ) -> None:
         """Fire failure callback and return None."""
+        error: str | None = None
+        if exc:
+            error = exc.msg if isinstance(exc, WebDriverException) else str(exc)
         result = FailedHealingResult(
             element_name=element_name,
             locator_key=locator_key,
             locator=locator,
             reason=reason,
-            error=str(exc) if exc else None,
+            error=error,
         )
         if self._on_healing_failure:
             self._on_healing_failure(result)
@@ -123,13 +131,13 @@ class Healer:
         snapshot = self._storage.load(locator_key)
 
         if not snapshot:
-            logger.debug('Self-healing: no snapshot for "%s", skipping', element_name)
+            logger.info('Self-healing: no snapshot for "%s", skipping', element_name)
             return self._fail('no-snapshot', element_name, locator_key, locator)
 
         try:
             candidates_data: list[dict] = driver.execute_script(_GET_CANDIDATES_JS, snapshot.tag)
-        except Exception as exc:
-            logger.debug('Self-healing: failed to get candidates for "%s": %s', element_name, exc)
+        except WebDriverException as exc:
+            logger.info('Self-healing: failed to get candidates for "%s": %s', element_name, exc)
             return self._fail('candidates-script-error', element_name, locator_key, locator, exc=exc)
 
         if not candidates_data:
@@ -139,13 +147,13 @@ class Healer:
         best_index = -1
 
         for item in candidates_data:
-            score = _score_similarity(item, snapshot)
+            score = _score_similarity(item, snapshot, self._attribute_weights)
             if score > best_score:
                 best_score = score
                 best_index = item['index']
 
         if best_score < self._score_threshold or best_index < 0:
-            logger.debug(
+            logger.info(
                 'Self-healing: best score %.2f below threshold %.2f for "%s"',
                 best_score,
                 self._score_threshold,
@@ -154,17 +162,20 @@ class Healer:
             return self._fail('below-threshold', element_name, locator_key, locator)
 
         # Get the actual WebElement by index among elements of the same tag
+        healed_locator = None
         try:
-            from selenium.webdriver.common.by import By
-
             web_elements = driver.find_elements(By.TAG_NAME, snapshot.tag)
             if best_index >= len(web_elements):
-                return self._fail('index-out-of-bounds', element_name, locator_key, locator)
-            healed_web_element = web_elements[best_index]
-            healed_locator = generate_locator(healed_web_element, driver)
-        except Exception as exc:
-            logger.debug('Self-healing: failed to generate locator for "%s": %s', element_name, exc)
-            return self._fail('generate-locator-error', element_name, locator_key, locator, exc=exc)
+                self._fail('index-out-of-bounds', element_name, locator_key, locator)
+            else:
+                healed_web_element = web_elements[best_index]
+                healed_locator = generate_locator(healed_web_element, driver)
+        except WebDriverException as exc:
+            logger.info('Self-healing: failed to generate locator for "%s": %s', element_name, exc)
+            self._fail('generate-locator-error', element_name, locator_key, locator, exc=exc)
+
+        if healed_locator is None:
+            return None
 
         result = SuccessHealingResult(
             element_name=element_name,
@@ -184,13 +195,16 @@ class Healer:
         return self._succeed(result)
 
 
-def _score_similarity(candidate: dict[str, Any], snapshot: ElementSnapshot) -> float:
-    """Compute a 0–1 similarity score between a candidate DOM element and a saved snapshot."""
+def _score_similarity(
+    candidate: dict[str, Any], snapshot: ElementSnapshot, attribute_weights: dict[str, float] | None = None
+) -> float:
+    """Compute a 0-1 similarity score between a candidate DOM element and a saved snapshot."""
+    weights = attribute_weights or _ATTRIBUTE_WEIGHTS
     score = 0.0
     total_weight = 0.0
 
     # Attribute matching
-    for attr, weight in _ATTRIBUTE_WEIGHTS.items():
+    for attr, weight in weights.items():
         snap_val = snapshot.attributes.get(attr)
         cand_val = candidate['attrs'].get(attr)
 

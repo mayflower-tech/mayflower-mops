@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from selenium.common.exceptions import WebDriverException
+
 from mops.self_healing.healer import FailedHealingResult, Healer, SuccessHealingResult
 from mops.self_healing.snapshot import ElementSnapshot
 
@@ -112,7 +114,7 @@ def test_failure_candidates_script_raises():
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
     driver = MagicMock()
-    driver.execute_script.side_effect = RuntimeError('browser error')
+    driver.execute_script.side_effect = WebDriverException('browser error')
     healer = Healer(storage, 0.7, on_healing_failure=callback)
 
     result = healer.heal('btn', 'key', '#submit', driver)
@@ -186,7 +188,7 @@ def test_failure_generate_locator_raises():
     driver.find_elements.return_value = [MagicMock()]
     healer = Healer(storage, 0.7, on_healing_failure=callback)
 
-    with patch('mops.self_healing.healer.generate_locator', side_effect=RuntimeError('no locator')):
+    with patch('mops.self_healing.healer.generate_locator', side_effect=WebDriverException('no locator')):
         result = healer.heal('btn', 'key', '#submit', driver)
 
     assert result is None

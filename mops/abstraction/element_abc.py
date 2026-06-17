@@ -373,7 +373,7 @@ class ElementABC(MixinABC, ABC):
 
     def _is_available(self) -> bool:
         """
-        Internal check for element availability without @no_healing.
+        Check element availability internally without @no_healing.
 
         Used by :meth:`wait_availability` to allow self-healing during polling.
         Override in backend-specific classes. Default delegates to
@@ -395,7 +395,7 @@ class ElementABC(MixinABC, ABC):
 
     def _is_displayed(self, silent: bool = False) -> bool:
         """
-        Internal check for element display state without @no_healing.
+        Check element display state internally without @no_healing.
 
         Used by :meth:`wait_visibility` to allow self-healing during polling.
         Override in backend-specific classes. Default delegates to

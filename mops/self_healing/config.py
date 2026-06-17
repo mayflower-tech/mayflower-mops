@@ -18,7 +18,9 @@ class SelfHealingConfig:
         are saved to storage for future healing.
     :param heal_locators: When :obj:`True`, the system attempts to heal broken locators
         by loading saved snapshots and searching for matching elements.
-    :param score_threshold: Minimum similarity score (0–1) to accept a healed locator.
+    :param score_threshold: Minimum similarity score (0-1) to accept a healed locator.
+    :param attribute_weights: Custom attribute weights for element similarity scoring.
+        When not set, built-in defaults are used.
     :param storage: A :class:`SnapshotStorage` instance. When not set, storage
         remains uninitialised and neither snapshots nor healing will work.
         External projects can pass their own backend (Redis, S3, PostgreSQL, etc.) here.
@@ -31,6 +33,7 @@ class SelfHealingConfig:
     save_snapshots: bool = False
     heal_locators: bool = False
     score_threshold: float = 0.7
+    attribute_weights: dict[str, float] | None = None
     storage: SnapshotStorage | None = None
     on_healing_success: Callable[[SuccessHealingResult], None] | None = None
     on_healing_failure: Callable[[FailedHealingResult], None] | None = None
