@@ -26,11 +26,12 @@ _TEST_ATTRS = ('data-testid', 'data-test', 'data-cy', 'data-qa', 'data-automatio
 _MAX_TEXT_LENGTH = 50
 
 
-def generate_locator(web_element: object, driver: object) -> str:
-    """Generate a stable XPath locator from a live Selenium WebElement.
+def generate_locator(web_element: object, driver: object) -> list[str]:
+    """Generate all possible stable XPath locators from a live Selenium WebElement.
 
-    Tries stable attributes in priority order, falls back to positional XPath.
-    The returned locator uses the ``xpath=`` prefix used by MOPS.
+    Returns locators ordered by preference (most stable first).
+    The caller should try each in order until one succeeds.
+    Each locator uses the ``xpath=`` prefix used by MOPS.
     """
     try:
         attrs: dict[str, str] = {}
@@ -43,7 +44,7 @@ def generate_locator(web_element: object, driver: object) -> str:
 
         text = (web_element.text or '').strip()
     except WebDriverException:
-        return _positional_xpath(web_element, driver)
+        return [_positional_xpath(web_element, driver)]
 
     providers: list[str] = []
 
@@ -69,11 +70,6 @@ def generate_locator(web_element: object, driver: object) -> str:
         escaped = aria.replace('"', '\\"')
         providers.append(f'xpath=//*[@aria-label="{escaped}"]')
 
-    # visible text (short, single-line)
-    if text and len(text) <= _MAX_TEXT_LENGTH and '\n' not in text:
-        escaped = text.replace('"', '\\"')
-        providers.append(f'xpath=//{tag}[normalize-space(.)="{escaped}"]')
-
     # type + tag
     el_type = attrs.get('type', '')
     if el_type:
@@ -86,7 +82,13 @@ def generate_locator(web_element: object, driver: object) -> str:
         if stable:
             providers.append(f'xpath=//{tag}[contains(@class, "{stable[0]}")]')
 
-    return providers[0] if providers else _positional_xpath(web_element, driver)
+    # visible text (short, single-line)
+    if text and len(text) <= _MAX_TEXT_LENGTH and '\n' not in text:
+        escaped = text.replace('"', '\\"')
+        providers.append(f'xpath=//{tag}[normalize-space(.)="{escaped}"]')
+
+    providers.append(_positional_xpath(web_element, driver))
+    return providers
 
 
 def _positional_xpath(web_element: object, driver: object) -> str:

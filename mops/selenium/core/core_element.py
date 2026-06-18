@@ -65,7 +65,7 @@ def _get_healer() -> Healer:
     _HealerState.healer = Healer(
         _HealerState.storage,
         config.score_threshold,
-        attribute_weights=config.attribute_weights,
+        scoring_weights=config.scoring_weights,
         on_healing_success=config.on_healing_success,
         on_healing_failure=config.on_healing_failure,
     )
@@ -576,15 +576,19 @@ class CoreElement(ElementABC, ABC):
             if is_healing_for_method_enabled() and get_config().heal_locators:
                 result = self._attempt_healing()
                 if result:
-                    healed_locator_type, healed_locator_value = _parse_healed_locator(result.healed_locator)
-                    healed = base.find_element(healed_locator_type, healed_locator_value)
-                    # Persist healed locator so subsequent lookups don't re-heal
-                    self.locator_type = healed_locator_type
-                    self.locator = healed_locator_value
-                    self._cached_element = healed
-                    if get_config().save_snapshots:
-                        _HealerState.storage.save_from_element(self, healed, self.driver)
-                    return healed
+                    for locator in result.healed_locators_candidates:
+                        healed_locator_type, healed_locator_value = _parse_healed_locator(locator)
+                        try:
+                            healed = base.find_element(healed_locator_type, healed_locator_value)
+                        except SeleniumNoSuchElementException:
+                            continue
+                        result.healed_locator = locator
+                        # Persist healed locator so subsequent lookups don't re-heal
+                        self.locator_type = healed_locator_type
+                        self.locator = healed_locator_value
+                        self._cached_element = healed
+                        return healed
+                    raise NoSuchElementException(exc.msg) from exc
             raise NoSuchElementException(exc.msg) from exc
         else:
             return element

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -16,24 +16,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger('mops.self_healing')
 
-_ATTRIBUTE_WEIGHTS: dict[str, float] = {
-    'id': 1.0,
-    'data-testid': 0.9,
-    'data-test': 0.9,
-    'data-cy': 0.9,
-    'data-qa': 0.9,
-    'data-automation-id': 0.9,
-    'name': 0.7,
-    'aria-label': 0.6,
-    'placeholder': 0.5,
-    'type': 0.4,
-    'role': 0.3,
-    'href': 0.3,
-    'alt': 0.3,
-    'title': 0.2,
-    'class': 0.15,
-}
-
 _GET_CANDIDATES_JS = """
 return (function(tag) {
     function getAttrs(node) {
@@ -42,6 +24,22 @@ return (function(tag) {
             attrs[node.attributes[i].name] = node.attributes[i].value;
         }
         return attrs;
+    }
+    function getSiblings(el) {
+        var parent = el.parentElement;
+        if (!parent) return [];
+        var children = parent.children;
+        var siblings = [];
+        for (var i = 0; i < children.length && siblings.length < 5; i++) {
+            if (children[i] !== el) {
+                siblings.push({
+                    tag: children[i].tagName.toLowerCase(),
+                    text: (children[i].textContent || '').trim().substring(0, 50),
+                    attrs: getAttrs(children[i])
+                });
+            }
+        }
+        return siblings;
     }
     var elements = document.getElementsByTagName(tag);
     var result = [];
@@ -53,7 +51,8 @@ return (function(tag) {
             attrs: getAttrs(el),
             text: (el.textContent || '').trim().substring(0, 100),
             parentTag: parent ? parent.tagName.toLowerCase() : null,
-            parentAttrs: parent ? getAttrs(parent) : {}
+            parentAttrs: parent ? getAttrs(parent) : {},
+            siblings: getSiblings(el)
         });
     }
     return result;
@@ -62,10 +61,36 @@ return (function(tag) {
 
 
 @dataclass
+class ScoringWeights:
+    """Tunable weights for the similarity scoring function.
+
+    Each weight controls how much a signal contributes to the final 0-1 score.
+    ``attribute`` is a per-attribute dict; the rest are scalar multipliers.
+    """
+
+    attribute: dict[str, float] = field(
+        default_factory=lambda: {
+            'id': 1.0,
+            'name': 0.7,
+            'placeholder': 0.5,
+            'type': 0.4,
+            'role': 0.3,
+            'href': 0.3,
+            'title': 0.2,
+            'class': 0.15,
+        }
+    )
+    text: float = 0.3
+    parent: float = 0.2
+    siblings: float = 0.15
+
+
+@dataclass
 class SuccessHealingResult:
     element_name: str
     original_locator: str
-    healed_locator: str
+    healed_locator: str | None
+    healed_locators_candidates: list[str]
     score: float
     page: str | None = None
 
@@ -86,13 +111,13 @@ class Healer:
         self,
         storage: SnapshotStorage,
         score_threshold: float,
-        attribute_weights: dict[str, float] | None = None,
+        scoring_weights: ScoringWeights | None = None,
         on_healing_success: Callable[[SuccessHealingResult], None] | None = None,
         on_healing_failure: Callable[[FailedHealingResult], None] | None = None,
     ) -> None:
         self._storage = storage
         self._score_threshold = score_threshold
-        self._attribute_weights = attribute_weights or _ATTRIBUTE_WEIGHTS
+        self._scoring_weights = scoring_weights or ScoringWeights()
         self._on_healing_success = on_healing_success
         self._on_healing_failure = on_healing_failure
 
@@ -147,7 +172,7 @@ class Healer:
         best_index = -1
 
         for item in candidates_data:
-            score = _score_similarity(item, snapshot, self._attribute_weights)
+            score = _score_similarity(item, snapshot, self._scoring_weights)
             if score > best_score:
                 best_score = score
                 best_index = item['index']
@@ -162,25 +187,26 @@ class Healer:
             return self._fail('below-threshold', element_name, locator_key, locator)
 
         # Get the actual WebElement by index among elements of the same tag
-        healed_locator = None
+        healed_locators: list[str] | None = None
         try:
             web_elements = driver.find_elements(By.TAG_NAME, snapshot.tag)
             if best_index >= len(web_elements):
                 self._fail('index-out-of-bounds', element_name, locator_key, locator)
             else:
                 healed_web_element = web_elements[best_index]
-                healed_locator = generate_locator(healed_web_element, driver)
+                healed_locators = generate_locator(healed_web_element, driver)
         except WebDriverException as exc:
             logger.info('Self-healing: failed to generate locator for "%s": %s', element_name, exc)
             self._fail('generate-locator-error', element_name, locator_key, locator, exc=exc)
 
-        if healed_locator is None:
+        if healed_locators is None:
             return None
 
         result = SuccessHealingResult(
             element_name=element_name,
             original_locator=locator,
-            healed_locator=healed_locator,
+            healed_locator=None,
+            healed_locators_candidates=healed_locators,
             score=best_score,
         )
 
@@ -188,7 +214,7 @@ class Healer:
             'Self-healing: healed "%s"  %s -> %s  (score=%.2f)',
             element_name,
             locator,
-            healed_locator,
+            healed_locators,
             best_score,
         )
 
@@ -196,15 +222,17 @@ class Healer:
 
 
 def _score_similarity(
-    candidate: dict[str, Any], snapshot: ElementSnapshot, attribute_weights: dict[str, float] | None = None
+    candidate: dict[str, Any],
+    snapshot: ElementSnapshot,
+    weights: ScoringWeights | None = None,
 ) -> float:
     """Compute a 0-1 similarity score between a candidate DOM element and a saved snapshot."""
-    weights = attribute_weights or _ATTRIBUTE_WEIGHTS
+    w = weights or ScoringWeights()
     score = 0.0
     total_weight = 0.0
 
     # Attribute matching
-    for attr, weight in weights.items():
+    for attr, weight in w.attribute.items():
         snap_val = snapshot.attributes.get(attr)
         cand_val = candidate['attrs'].get(attr)
 
@@ -222,21 +250,26 @@ def _score_similarity(
     snap_text = snapshot.text
     cand_text = candidate.get('text', '')
     if snap_text:
-        text_weight = 0.3
-        total_weight += text_weight
+        total_weight += w.text
         if snap_text == cand_text:
-            score += text_weight
+            score += w.text
         elif snap_text and cand_text:
-            score += text_weight * _text_similarity(snap_text, cand_text)
+            score += w.text * _text_similarity(snap_text, cand_text)
 
     # Parent tag match
     if snapshot.parent_tag and candidate.get('parentTag'):
-        parent_weight = 0.2
-        total_weight += parent_weight
+        total_weight += w.parent
         if candidate['parentTag'] == snapshot.parent_tag:
-            score += parent_weight * 0.5
+            score += w.parent * 0.5
             parent_attr_score = _attrs_overlap(snapshot.parent_attributes, candidate.get('parentAttrs', {}))
-            score += parent_weight * 0.5 * parent_attr_score
+            score += w.parent * 0.5 * parent_attr_score
+
+    # Sibling similarity
+    snap_siblings = snapshot.siblings
+    cand_siblings = candidate.get('siblings', [])
+    if snap_siblings:
+        total_weight += w.siblings
+        score += w.siblings * _siblings_similarity(snap_siblings, cand_siblings)
 
     if total_weight == 0:
         return 0.0
@@ -271,3 +304,21 @@ def _attrs_overlap(snap_attrs: dict[str, str], cand_attrs: dict[str, str]) -> fl
         return 0.0
     matches = sum(1 for k, v in snap_attrs.items() if cand_attrs.get(k) == v)
     return matches / len(snap_attrs)
+
+
+def _siblings_similarity(snap_siblings: list[dict], cand_siblings: list[dict]) -> float:
+    """Compute 0-1 similarity between two sets of sibling elements."""
+    if not snap_siblings:
+        return 0.0
+
+    total = 0.0
+    for snap_sib in snap_siblings:
+        best = 0.0
+        for cand_sib in cand_siblings:
+            tag_match = 1.0 if snap_sib.get('tag') == cand_sib.get('tag') else 0.0
+            attr_score = _attrs_overlap(snap_sib.get('attrs', {}), cand_sib.get('attrs', {}))
+            score = tag_match * 0.3 + attr_score * 0.7
+            best = max(best, score)
+        total += best
+
+    return total / len(snap_siblings)

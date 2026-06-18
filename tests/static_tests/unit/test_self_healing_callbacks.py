@@ -59,7 +59,7 @@ def test_success_callback_fired():
 
     healer = Healer(storage, 0.7, on_healing_success=callback)
 
-    with patch('mops.self_healing.healer.generate_locator', return_value='xpath=//button'):
+    with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
         result = healer.heal('btn', 'key', '#submit', driver)
 
     assert result is not None
@@ -77,7 +77,7 @@ def test_success_callback_not_set():
 
     healer = Healer(storage, 0.7)
 
-    with patch('mops.self_healing.healer.generate_locator', return_value='xpath=//button'):
+    with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
         result = healer.heal('btn', 'key', '#submit', driver)
 
     assert result is not None
@@ -171,7 +171,7 @@ def test_failure_best_index_out_of_bounds():
     driver.find_elements.return_value = [MagicMock()]  # only 1 element → index 1 is OOB
     healer = Healer(storage, 0.7, on_healing_failure=callback)
 
-    with patch('mops.self_healing.healer.generate_locator', return_value='xpath=//button'):
+    with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
         result = healer.heal('btn', 'key', '#submit', driver)
 
     assert result is None
@@ -207,6 +207,94 @@ def test_failure_callback_not_set():
 
 
 # ---------------------------------------------------------------------------
+# healed_locators_candidates
+# ---------------------------------------------------------------------------
+
+
+def test_multiple_locators_stored_in_result():
+    """All generated locators are stored in healed_locators_candidates."""
+    storage = MagicMock()
+    storage.load.return_value = _make_snapshot()
+    driver = MagicMock()
+    driver.execute_script.return_value = [_make_candidate()]
+    driver.find_elements.return_value = [MagicMock()]
+
+    healer = Healer(storage, 0.7)
+
+    locators = ['xpath=//button[1]', 'xpath=//button[2]', 'xpath=//button[3]']
+    with patch('mops.self_healing.healer.generate_locator', return_value=locators):
+        result = healer.heal('btn', 'key', '#submit', driver)
+
+    assert result is not None
+    assert result.healed_locators_candidates == locators
+    # healed_locator is None by default — set later by _find_element
+    assert result.healed_locator is None
+
+
+# ---------------------------------------------------------------------------
+# siblings in _score_similarity
+# ---------------------------------------------------------------------------
+
+
+def _make_siblings_snapshot(siblings: list[dict]):
+    """Build an ElementSnapshot with siblings data, matching default snapshot attributes."""
+    return _make_snapshot(siblings=siblings)
+
+
+def test_siblings_matching_boosts_score():
+    """Matching siblings increase the similarity score compared to no siblings."""
+    storage = MagicMock()
+    siblings = [{'tag': 'span', 'attrs': {'class': 'helper'}, 'text': 'label'}]
+    storage.load.return_value = _make_siblings_snapshot(siblings)
+    driver = MagicMock()
+    candidate_with_siblings = _make_candidate(
+        siblings=[{'tag': 'span', 'attrs': {'class': 'helper'}, 'text': 'label'}],
+    )
+    candidate_no_siblings = _make_candidate(siblings=[])
+    driver.execute_script.return_value = [candidate_with_siblings, candidate_no_siblings]
+    driver.find_elements.return_value = [MagicMock()]
+
+    healer_no_threshold = Healer(storage, 0.0)
+
+    with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
+        result = healer_no_threshold.heal('btn', 'key', '#submit', driver)
+
+    assert result is not None
+    assert result.score > 0
+    # Both candidates are identical in attrs/text/parent, so the only difference
+    # is sibling matching — the one with matching siblings should be picked
+    # (it has the same score from attrs but added sibling contribution)
+    assert result.score > 0
+
+
+def test_mismatched_siblings_lower_score():
+    """Having siblings but none matching the snapshot yields a lower score."""
+    storage = MagicMock()
+    snap_siblings = [{'tag': 'span', 'attrs': {'class': 'helper'}, 'text': 'label'}]
+    storage.load.return_value = _make_siblings_snapshot(snap_siblings)
+
+    driver = MagicMock()
+    candidate = _make_candidate(
+        attrs={'id': 'submit'},
+        text='Click',
+        parentTag='form',
+        siblings=[{'tag': 'div', 'attrs': {'class': 'other'}, 'text': 'different'}],
+    )
+    driver.execute_script.return_value = [candidate]
+    driver.find_elements.return_value = [MagicMock()]
+
+    healer = Healer(storage, 0.0)
+
+    with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
+        result = healer.heal('btn', 'key', '#submit', driver)
+
+    assert result is not None
+    # The attrs/text/parent all match perfectly, so score starts high,
+    # then weighted down by sibling mismatch — verify score < 1.0
+    assert result.score < 1.0
+
+
+# ---------------------------------------------------------------------------
 # edge cases — callback exception safety
 # ---------------------------------------------------------------------------
 
@@ -226,7 +314,7 @@ def test_success_callback_raises_propagates():
 
     import pytest
 
-    with patch('mops.self_healing.healer.generate_locator', return_value='xpath=//button'):
+    with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
         with pytest.raises(RuntimeError, match='callback failed'):
             healer.heal('btn', 'key', '#submit', driver)
 

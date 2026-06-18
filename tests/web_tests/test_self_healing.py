@@ -85,3 +85,43 @@ def test_self_healing_recovery_after_class_change(second_playground_page):
     cls = row.get_attribute('class', silent=True)
     assert cls is not None, 'Self-healing did not recover the element'
     assert 'broken-row' in cls
+
+
+def test_self_healing_falls_back_to_second_locator(second_playground_page):
+    """
+    When the first healed locator fails to find the element,
+    ``_find_element`` tries subsequent locators from ``healed_locators_candidates``.
+
+    Flow:
+    1. Find row_with_cards → snapshot saved.
+    2. Change the ``class`` in DOM, breaking the original ``.row`` locator.
+    3. Patch ``generate_locator`` to prepend a non-existent locator so the
+       first attempt always fails.
+    4. Healing runs → first locator misses → second (real) locator succeeds.
+    """
+    from unittest.mock import patch
+
+    import mops.self_healing.healer as healer_module
+
+    row = second_playground_page.row_with_cards
+    row.wait_visibility(silent=True)  # snapshot saved
+
+    # Break the original locator
+    driver = second_playground_page.driver
+    driver.execute_script("""
+        var elements = document.querySelectorAll('.row');
+        for (var i = 0; i < elements.length; i++) {
+            elements[i].className = 'broken-row';
+        }
+    """)
+
+    original_generate = healer_module.generate_locator
+
+    def _generate_with_bad_first(web_element, driver):
+        real_locators = original_generate(web_element, driver)
+        return ['xpath=//*[@id="definitely-not-found"]'] + real_locators
+
+    with patch('mops.self_healing.healer.generate_locator', side_effect=_generate_with_bad_first):
+        cls = row.get_attribute('class', silent=True)
+        assert cls is not None, 'Self-healing did not recover the element'
+        assert 'broken-row' in cls
