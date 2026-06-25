@@ -29,7 +29,7 @@ from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
 from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
-from mops.self_healing.context import is_healing_for_method_enabled, no_healing
+from mops.self_healing.decorators import healing
 from mops.self_healing.healer import Healer, SuccessHealingResult
 from mops.shared_utils import _scaled_screenshot, cut_log_data
 from mops.utils.decorators import retry
@@ -56,11 +56,17 @@ class _HealerState:
 
 
 def _get_healer() -> Healer:
-    """Return the global Healer singleton."""
-    if _HealerState.healer:
+    """Return the global Healer singleton.
+
+    Re-initialises when ``get_config().storage`` changes (identity check)
+    or when the cached storage is ``None``, so that ``configure()`` calls
+    between tests are picked up.
+    """
+    config = get_config()
+
+    if _HealerState.healer and _HealerState.storage is config.storage and _HealerState.storage is not None:
         return _HealerState.healer
 
-    config = get_config()
     _HealerState.storage = config.storage
     _HealerState.healer = Healer(
         _HealerState.storage,
@@ -327,7 +333,6 @@ class CoreElement(ElementABC, ABC):
 
         return element
 
-    @no_healing
     def is_available(self) -> bool:
         """
         Check if the element is available in DOM tree.
@@ -355,7 +360,6 @@ class CoreElement(ElementABC, ABC):
 
         return is_displayed
 
-    @no_healing
     def is_displayed(self, silent: bool = False) -> bool:
         """
         Check if the element is displayed.
@@ -494,6 +498,7 @@ class CoreElement(ElementABC, ABC):
         """
         return ActionChains(self.driver)
 
+    @healing
     def _get_element(self, wait_strategy: bool | Callable = True, force_wait: bool = False) -> SeleniumWebElement:
         """
         Get selenium element from driver or parent element
@@ -567,28 +572,12 @@ class CoreElement(ElementABC, ABC):
             self._cached_element = element
             # Save snapshot for future healing
             config = get_config()
-            if config.save_snapshots:
+            if config.save_snapshots and config.storage:
                 _get_healer()
-                _HealerState.storage.save_from_element(self, element, self.driver)
+                config.storage.save_from_element(self, element, self.driver)
         except (SeleniumInvalidArgumentException, SeleniumInvalidSelectorException) as exc:
             self._raise_invalid_selector_exception(exc)
         except SeleniumNoSuchElementException as exc:
-            if is_healing_for_method_enabled() and get_config().heal_locators:
-                result = self._attempt_healing()
-                if result:
-                    for locator in result.healed_locators_candidates:
-                        healed_locator_type, healed_locator_value = _parse_healed_locator(locator)
-                        try:
-                            healed = base.find_element(healed_locator_type, healed_locator_value)
-                        except SeleniumNoSuchElementException:
-                            continue
-                        result.healed_locator = locator
-                        # Persist healed locator so subsequent lookups don't re-heal
-                        self.locator_type = healed_locator_type
-                        self.locator = healed_locator_value
-                        self._cached_element = healed
-                        return healed
-                    raise NoSuchElementException(exc.msg) from exc
             raise NoSuchElementException(exc.msg) from exc
         else:
             return element
@@ -601,13 +590,44 @@ class CoreElement(ElementABC, ABC):
         """
         try:
             healer = _get_healer()
-            locator_key = _HealerState.storage.normalize_locator_key(f'{self.name}::{self.locator}')
+            locator_key = get_config().storage.normalize_locator_key(f'{self.name}::{self.locator}')
             result = healer.heal(self.name, locator_key, self.locator, self.driver)
             if type(result) is SuccessHealingResult:
                 return result
         except Exception as exc:  # noqa: BLE001
             self.log(f'Self-healing failed with unexpected exception: {exc}', level='warning')
             return None
+
+    def _try_healed_locators(self, result: SuccessHealingResult) -> SeleniumWebElement:
+        """Try each healed locator and persist the first working one."""
+        base = self._get_base(wait_strategy=False)
+        for locator in result.healed_locators_candidates:
+            healed_locator_type, healed_locator_value = _parse_healed_locator(locator)
+            try:
+                healed = base.find_element(healed_locator_type, healed_locator_value)
+            except SeleniumNoSuchElementException:
+                continue
+            result.healed_locator = locator
+            self.locator_type = healed_locator_type
+            self.locator = healed_locator_value
+            self._cached_element = healed
+            return healed
+        raise NoSuchElementException
+
+    def _heal_after_wait(self) -> bool:
+        """Attempt healing after a wait condition timed out.
+
+        Persists the first working healed locator so subsequent lookups
+        use it directly. Returns ``True`` if a working locator was found.
+        """
+        result = self._attempt_healing()
+        if not result:
+            return False
+        try:
+            self._try_healed_locators(result)
+        except NoSuchElementException:
+            return False
+        return True
 
     def _find_elements(self, wait_parent: bool = False) -> list[SeleniumWebElement | AppiumWebElement]:
         """

@@ -125,3 +125,183 @@ def test_self_healing_falls_back_to_second_locator(second_playground_page):
         cls = row.get_attribute('class', silent=True)
         assert cls is not None, 'Self-healing did not recover the element'
         assert 'broken-row' in cls
+
+
+def test_wait_hidden_does_not_heal(second_playground_page):
+    """
+    ``wait_hidden`` must NOT trigger self-healing.
+
+    Flow:
+    1. Find row_with_cards → snapshot saved.
+    2. Seed the snapshot under a broken locator key.
+    3. Create a new element with the broken locator.
+    4. ``wait_hidden`` succeeds immediately (element not found = hidden).
+    5. Assert the locator was NOT updated — healing was never attempted.
+    6. Assert the element still can't be found after ``wait_hidden``.
+    """
+    from unittest.mock import patch
+
+    from mops.selenium.core.core_element import CoreElement
+
+    row = second_playground_page.row_with_cards
+
+    # Find the real element so the snapshot is persisted.
+    row.wait_visibility(silent=True)
+
+    storage = get_config().storage
+    real_key = f'{row.name}::{row.locator}'
+    snapshot = storage.load(real_key)
+    assert snapshot is not None
+
+    # Seed the snapshot under a broken locator.
+    broken_locator = '.row-broken-locator-self-healing-test'
+    storage.save(f'{row.name}::{broken_locator}', snapshot)
+
+    broken_row = Element(broken_locator, name=row.name)
+
+    # Spy on _attempt_healing — it must NOT be called during wait_hidden.
+    original_attempt = CoreElement._attempt_healing
+    attempt_called = False
+
+    def _spy(self, *args, **kwargs):
+        nonlocal attempt_called
+        attempt_called = True
+        return original_attempt(self, *args, **kwargs)
+
+    with patch.object(CoreElement, '_attempt_healing', _spy):
+        broken_row.wait_hidden(silent=True)
+
+    # wait_hidden should succeed without attempting healing
+    assert not attempt_called, '_attempt_healing was called during wait_hidden'
+    assert broken_row.locator == broken_locator, 'Locator was changed by healing'
+
+    # Verify the element can't be found with the broken locator
+    assert not broken_row.is_available(), 'Broken locator should not find an element'
+
+
+def test_is_displayed_does_not_heal(second_playground_page):
+    """
+    ``is_displayed`` must NOT trigger self-healing.
+
+    Flow:
+    1. Find row_with_cards → snapshot saved.
+    2. Seed the snapshot under a broken locator key.
+    3. Create a new element with the broken locator.
+    4. ``is_displayed`` returns False (element not found).
+    5. Assert ``_attempt_healing`` was never called.
+    """
+    from unittest.mock import patch
+
+    from mops.selenium.core.core_element import CoreElement
+
+    row = second_playground_page.row_with_cards
+    row.wait_visibility(silent=True)
+
+    storage = get_config().storage
+    real_key = f'{row.name}::{row.locator}'
+    snapshot = storage.load(real_key)
+
+    broken_locator = '.row-broken-locator-self-healing-test'
+    storage.save(f'{row.name}::{broken_locator}', snapshot)
+
+    broken_row = Element(broken_locator, name=row.name)
+
+    original_attempt = CoreElement._attempt_healing
+    attempt_called = False
+
+    def _spy(self, *args, **kwargs):
+        nonlocal attempt_called
+        attempt_called = True
+        return original_attempt(self, *args, **kwargs)
+
+    with patch.object(CoreElement, '_attempt_healing', _spy):
+        displayed = broken_row.is_displayed(silent=True)
+
+    assert not displayed, 'Broken element should not be displayed'
+    assert not attempt_called, '_attempt_healing was called during is_displayed'
+    assert broken_row.locator == broken_locator, 'Locator was changed by healing'
+
+
+def test_is_hidden_does_not_heal(second_playground_page):
+    """
+    ``is_hidden`` must NOT trigger self-healing.
+
+    Flow:
+    1. Find row_with_cards → snapshot saved.
+    2. Seed the snapshot under a broken locator key.
+    3. Create a new element with the broken locator.
+    4. ``is_hidden`` returns True (element not found = hidden).
+    5. Assert ``_attempt_healing`` was never called.
+    """
+    from unittest.mock import patch
+
+    from mops.selenium.core.core_element import CoreElement
+
+    row = second_playground_page.row_with_cards
+    row.wait_visibility(silent=True)
+
+    storage = get_config().storage
+    real_key = f'{row.name}::{row.locator}'
+    snapshot = storage.load(real_key)
+
+    broken_locator = '.row-broken-locator-self-healing-test'
+    storage.save(f'{row.name}::{broken_locator}', snapshot)
+
+    broken_row = Element(broken_locator, name=row.name)
+
+    original_attempt = CoreElement._attempt_healing
+    attempt_called = False
+
+    def _spy(self, *args, **kwargs):
+        nonlocal attempt_called
+        attempt_called = True
+        return original_attempt(self, *args, **kwargs)
+
+    with patch.object(CoreElement, '_attempt_healing', _spy):
+        hidden = broken_row.is_hidden(silent=True)
+
+    assert hidden, 'Broken element should be considered hidden'
+    assert not attempt_called, '_attempt_healing was called during is_hidden'
+    assert broken_row.locator == broken_locator, 'Locator was changed by healing'
+
+
+def test_wait_hidden_without_error_does_not_heal(second_playground_page):
+    """
+    ``wait_hidden_without_error`` must NOT trigger self-healing.
+
+    Flow:
+    1. Find row_with_cards → snapshot saved.
+    2. Seed the snapshot under a broken locator key.
+    3. Create a new element with the broken locator.
+    4. ``wait_hidden_without_error`` succeeds (element not found = hidden).
+    5. Assert ``_attempt_healing`` was never called.
+    """
+    from unittest.mock import patch
+
+    from mops.selenium.core.core_element import CoreElement
+
+    row = second_playground_page.row_with_cards
+    row.wait_visibility(silent=True)
+
+    storage = get_config().storage
+    real_key = f'{row.name}::{row.locator}'
+    snapshot = storage.load(real_key)
+
+    broken_locator = '.row-broken-locator-self-healing-test'
+    storage.save(f'{row.name}::{broken_locator}', snapshot)
+
+    broken_row = Element(broken_locator, name=row.name)
+
+    original_attempt = CoreElement._attempt_healing
+    attempt_called = False
+
+    def _spy(self, *args, **kwargs):
+        nonlocal attempt_called
+        attempt_called = True
+        return original_attempt(self, *args, **kwargs)
+
+    with patch.object(CoreElement, '_attempt_healing', _spy):
+        broken_row.wait_hidden_without_error(silent=True)
+
+    assert not attempt_called, '_attempt_healing was called during wait_hidden_without_error'
+    assert broken_row.locator == broken_locator, 'Locator was changed by healing'
