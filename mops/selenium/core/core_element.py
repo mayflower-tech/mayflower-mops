@@ -29,10 +29,9 @@ from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
 from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
-from mops.self_healing.decorators import healing
 from mops.self_healing.healer import Healer, SuccessHealingResult
 from mops.shared_utils import _scaled_screenshot, cut_log_data
-from mops.utils.decorators import retry
+from mops.utils.decorators import healing, retry
 from mops.utils.internal_utils import WAIT_EL, get_dict, is_group, safe_call
 
 if TYPE_CHECKING:

@@ -4,7 +4,8 @@ from functools import wraps
 import time
 from typing import TYPE_CHECKING, Any
 
-from mops.exceptions import ContinuousWaitException
+from mops.exceptions import ContinuousWaitException, NoSuchElementException
+from mops.self_healing.config import get_config
 from mops.utils.internal_utils import (
     HALF_WAIT_EL,
     QUARTER_WAIT_EL,
@@ -54,6 +55,28 @@ def retry(exceptions: type | tuple, timeout: int = HALF_WAIT_EL) -> Callable:
     return decorator
 
 
+def healing(method: Callable) -> Callable:
+    """Attempt self-healing when a :class:`NoSuchElementException` is raised.
+
+    Apply to element access methods (``_get_element``, ``click``, etc.)
+    so that direct element lookups are healed immediately.
+    """
+
+    @wraps(method)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return method(self, *args, **kwargs)
+        except NoSuchElementException:
+            if not get_config().heal_locators:
+                raise
+            result = self._attempt_healing()
+            if not result:
+                raise
+            return self._try_healed_locators(result)
+
+    return wrapper
+
+
 def wait_condition(method: Callable) -> Callable:
     """Wrap an element wait method with polling logic until timeout or success."""
 
@@ -93,6 +116,14 @@ def wait_condition(method: Callable) -> Callable:
                 delay = increase_delay(delay)
 
         result.exc._timeout = timeout
+
+        # Attempt healing after wait timeout
+        heal = getattr(self, '_heal_after_wait', None)
+        if heal and heal():
+            result = method(self, *args, **kwargs)
+            if result.execution_result:
+                return self
+
         raise result.exc
 
     return wrapper

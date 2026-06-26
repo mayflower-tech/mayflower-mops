@@ -31,7 +31,6 @@ from mops.mixins.objects.wait_result import Result
 from mops.playwright.play_element import PlayElement
 from mops.selenium.elements.mobile_element import MobileElement
 from mops.selenium.elements.web_element import WebElement
-from mops.self_healing.decorators import healing_after_wait
 from mops.utils.decorators import wait_condition, wait_continuous
 from mops.utils.internal_utils import (
     QUARTER_WAIT_EL,
@@ -265,7 +264,6 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
     # Elements waits
 
     @wait_continuous
-    @healing_after_wait
     @wait_condition
     def wait_visibility(
         self,
@@ -439,7 +437,6 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
                 self.log(f'Ignored exception: "{exception.msg}"')
         return self
 
-    @healing_after_wait
     @wait_condition
     def wait_availability(self, *, timeout: int = WAIT_EL, silent: bool = False) -> Element:
         r"""
