@@ -31,7 +31,7 @@ from mops.mixins.objects.wait_result import Result
 from mops.playwright.play_element import PlayElement
 from mops.selenium.elements.mobile_element import MobileElement
 from mops.selenium.elements.web_element import WebElement
-from mops.utils.decorators import wait_condition, wait_continuous
+from mops.utils.decorators import healing, healing_after_wait, wait_condition, wait_continuous
 from mops.utils.internal_utils import (
     QUARTER_WAIT_EL,
     WAIT_EL,
@@ -263,6 +263,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
 
     # Elements waits
 
+    @healing_after_wait
     @wait_continuous
     @wait_condition
     def wait_visibility(
@@ -437,6 +438,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
                 self.log(f'Ignored exception: "{exception.msg}"')
         return self
 
+    @healing_after_wait
     @wait_condition
     def wait_availability(self, *, timeout: int = WAIT_EL, silent: bool = False) -> Element:
         r"""
@@ -766,6 +768,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
 
         return is_visible
 
+    @healing
     def scroll_into_view(
         self,
         block: ScrollTo = ScrollTo.CENTER,
@@ -834,6 +837,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
 
         return image_object
 
+    @healing
     def hide(self, silent: bool = False) -> Element:
         """
         Make the element invisible by setting its opacity to 0.
@@ -848,6 +852,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         self.execute_script('arguments[0].style.opacity = "0";')
         return self
 
+    @healing
     def show(self, silent: bool = False) -> Element:
         """
         Make the element visible by setting its opacity to 1.

@@ -130,6 +130,7 @@ class CoreElement(ElementABC, ABC):
 
     # Element interaction
 
+    @healing
     @retry(ElementNotInteractableException)
     def click(self, *, force_wait: bool = True, **kwargs: Any) -> CoreElement:
         """
@@ -165,6 +166,7 @@ class CoreElement(ElementABC, ABC):
         msg = f'Element "{self.name}" not interactable. {self.get_element_info()}. Original error: {selenium_exc_msg}'
         raise ElementNotInteractableException(msg)
 
+    @healing
     def type_text(self, text: str | KeyboardKeys, silent: bool = False) -> CoreElement:
         """
         Types text into the element.
@@ -184,6 +186,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def type_slowly(self, text: str, sleep_gap: float = 0.05, silent: bool = False) -> CoreElement:
         """
         Types text into the element slowly with a delay between keystrokes.
@@ -208,6 +211,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def clear_text(self, silent: bool = False) -> CoreElement:
         """
         Clear the text of the element.
@@ -223,6 +227,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def check(self) -> CoreElement:
         """
         Check the checkbox element.
@@ -239,6 +244,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def uncheck(self) -> CoreElement:
         """
         Unchecks the checkbox element.
@@ -257,6 +263,7 @@ class CoreElement(ElementABC, ABC):
 
     # Element state
 
+    @healing
     def screenshot_image(self, screenshot_base: bytes | None = None) -> Image:
         """
         Return a :class:`PIL.Image.Image` object representing the screenshot of the web element.
@@ -272,6 +279,7 @@ class CoreElement(ElementABC, ABC):
         return _scaled_screenshot(screenshot_base, element_size)
 
     @property
+    @healing
     def screenshot_base(self) -> bytes:
         """
         Returns the binary screenshot data of the element.
@@ -283,6 +291,7 @@ class CoreElement(ElementABC, ABC):
         return self.element.screenshot_as_png
 
     @property
+    @healing
     @retry(SeleniumStaleElementReferenceException)
     def text(self) -> str:
         """
@@ -384,6 +393,7 @@ class CoreElement(ElementABC, ABC):
 
         return status
 
+    @healing
     @retry(SeleniumStaleElementReferenceException)
     def get_attribute(self, attribute: str, silent: bool = False) -> str:
         """
@@ -457,6 +467,7 @@ class CoreElement(ElementABC, ABC):
         """
         return Location(**self.execute_script(get_element_position_on_screen_js))
 
+    @healing
     def is_enabled(self, silent: bool = False) -> bool:
         """
         Check if the current element is enabled.
@@ -470,6 +481,7 @@ class CoreElement(ElementABC, ABC):
 
         return self.element.is_enabled()
 
+    @healing
     def is_checked(self) -> bool:
         """
         Check if a checkbox or radio button is selected.
@@ -497,7 +509,6 @@ class CoreElement(ElementABC, ABC):
         """
         return ActionChains(self.driver)
 
-    @healing
     def _get_element(self, wait_strategy: bool | Callable = True, force_wait: bool = False) -> SeleniumWebElement:
         """
         Get selenium element from driver or parent element

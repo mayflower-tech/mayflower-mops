@@ -5,7 +5,7 @@ from typing import Union
 import pytest
 from mops.exceptions import TimeoutException
 from mops.utils.internal_utils import WAIT_METHODS_DELAY
-from mops.utils.decorators import wait_condition
+from mops.utils.decorators import healing_after_wait, wait_condition
 from mops.utils.logs import autolog
 from mops.mixins.objects.wait_result import Result
 
@@ -162,6 +162,7 @@ class MockHealableNamespace(MockNamespace):
             self._post_heal_retry = True
         return self._heal_after_wait_result
 
+    @healing_after_wait
     @wait_condition
     def wait_something(self, *, timeout: Union[int, float] = 1, silent: bool = False) -> bool:  # noqa
         return Result(  # noqa

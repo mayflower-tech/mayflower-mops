@@ -58,8 +58,8 @@ def retry(exceptions: type | tuple, timeout: int = HALF_WAIT_EL) -> Callable:
 def healing(method: Callable) -> Callable:
     """Attempt self-healing when a :class:`NoSuchElementException` is raised.
 
-    Apply to element access methods (``_get_element``, ``click``, etc.)
-    so that direct element lookups are healed immediately.
+    Catches the exception, heals the locator via ``_try_healed_locators``,
+    then retries the original method once with the healed locator.
     """
 
     @wraps(method)
@@ -72,7 +72,31 @@ def healing(method: Callable) -> Callable:
             result = self._attempt_healing()
             if not result:
                 raise
-            return self._try_healed_locators(result)
+            self._try_healed_locators(result)
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
+def healing_after_wait(method: Callable) -> Callable:
+    """Defer self-healing until a wait condition times out.
+
+    Wraps a ``@wait_condition`` method. When the wait times out, attempts
+    healing and retries ONCE. Does NOT use global flags — simply catches
+    ``Exception`` with a ``_timeout`` attribute and calls
+    ``self._heal_after_wait()``.
+    """
+
+    @wraps(method)
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return method(self, *args, **kwargs)
+        except Exception as exc:
+            if getattr(exc, '_timeout', None) is not None:
+                heal = getattr(self, '_heal_after_wait', None)
+                if heal and heal():
+                    return method(self, *args, **kwargs)
+            raise
 
     return wrapper
 
@@ -116,14 +140,6 @@ def wait_condition(method: Callable) -> Callable:
                 delay = increase_delay(delay)
 
         result.exc._timeout = timeout
-
-        # Attempt healing after wait timeout
-        heal = getattr(self, '_heal_after_wait', None)
-        if heal and heal():
-            result = method(self, *args, **kwargs)
-            if result.execution_result:
-                return self
-
         raise result.exc
 
     return wrapper
