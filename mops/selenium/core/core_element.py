@@ -552,7 +552,10 @@ class CoreElement(ElementABC, ABC):
             return base
 
         if self.parent:
-            base = self.parent._get_element(wait_strategy=wait_strategy)
+            if self.parent._is_element_still_available(self.parent._element):
+                base = self.parent._element
+            else:
+                base = self.parent._find_element(wait_parent=False)
 
         return base
 
@@ -589,7 +592,7 @@ class CoreElement(ElementABC, ABC):
         """
         try:
             healer = _get_healer()
-            locator_key = get_config().storage.normalize_locator_key(f'{self.name}::{self.locator}')
+            locator_key = get_config().storage._extract_full_locator_key(self)
             result = healer.heal(self.name, locator_key, self.locator, self.driver)
             if type(result) is SuccessHealingResult:
                 return result

@@ -305,3 +305,65 @@ def test_wait_hidden_without_error_does_not_heal(second_playground_page):
 
     assert not attempt_called, '_attempt_healing was called during wait_hidden_without_error'
     assert broken_row.locator == broken_locator, 'Locator was changed by healing'
+
+
+def test_parent_healing_not_triggered_during_child_healing(second_playground_page):
+    """
+    Self-healing on a child must NOT trigger healing on its parent.
+
+    Flow:
+    1. Create parent and child elements. Find child → snapshot saved.
+    2. Seed the snapshot under a broken child locator.
+    3. Create new child with broken locator, same parent.
+    4. Spy on ``_attempt_healing`` for all CoreElement instances.
+    5. ``get_attribute`` on the broken child → child heals.
+    6. Assert child locator was updated.
+    7. Assert parent ``_attempt_healing`` was NEVER called.
+    """
+    from unittest.mock import patch
+
+    from mops.selenium.core.core_element import CoreElement
+
+    row = second_playground_page.row_with_cards
+
+    # Create a child with the row as its parent
+    parent = row
+    child_with_parent = Element('a', name='card link', parent=parent)
+
+    # Find child → snapshot saved (both parent and child snapshots)
+    child_with_parent.wait_visibility(silent=True)
+
+    storage = get_config().storage
+    # Key includes parent: "card link::a -> row with cards::.row"
+    parent_key_part = f'{child_with_parent.name}::{child_with_parent.locator}'
+    if child_with_parent.parent:
+        parent_key_part += f' -> {row.name}::{row.locator}'
+    real_key = parent_key_part
+    snapshot = storage.load(real_key)
+    assert snapshot is not None
+
+    # Seed snapshot under a broken child locator (same parent hierarchy)
+    broken_locator = '.broken-card-link'
+    broken_key = f'{child_with_parent.name}::{broken_locator}'
+    if child_with_parent.parent:
+        broken_key += f' -> {row.name}::{row.locator}'
+    storage.save(broken_key, snapshot)
+
+    broken_child = Element(broken_locator, name=child_with_parent.name, parent=row)
+
+    # Spy on _attempt_healing for all instances
+    attempt_calls_names = []
+    original_attempt = CoreElement._attempt_healing
+
+    def _spy(self, *args, **kwargs):
+        attempt_calls_names.append(self.name)
+        return original_attempt(self, *args, **kwargs)
+
+    with patch.object(CoreElement, '_attempt_healing', _spy):
+        cls = broken_child.get_attribute('class', silent=True)
+
+    assert cls is not None, 'Child was not healed'
+    assert broken_child.locator != broken_locator, 'Child locator was not healed'
+    # Parent name must NOT appear in healing calls
+    assert parent.name not in attempt_calls_names, \
+        f'Parent healing was triggered: {attempt_calls_names}'

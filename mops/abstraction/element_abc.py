@@ -381,7 +381,7 @@ class ElementABC(MixinABC, ABC):
 
         :return: :class:`bool` - :obj:`True` if present in DOM
         """
-        return self.is_available()
+        return NotImplementedError
 
     def is_displayed(self, silent: bool = False) -> bool:
         """
@@ -405,7 +405,7 @@ class ElementABC(MixinABC, ABC):
         :type silent: bool
         :return: :class:`bool`
         """
-        return self.is_displayed(silent=silent)
+        return NotImplementedError
 
     def is_hidden(self, silent: bool = False) -> bool:
         """
