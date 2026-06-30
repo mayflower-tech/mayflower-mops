@@ -356,6 +356,55 @@ def test_wait_hidden_without_error_timeout_does_not_heal(second_playground_page)
     assert row.is_hidden(silent=True), 'Element should be hidden'
 
 
+def test_wait_visibility_without_error_does_not_heal(second_playground_page):
+    """
+    ``wait_visibility_without_error`` must NOT heal when the element is
+    invisible and the wait times out.
+
+    Flow:
+    1. Find row_with_cards → snapshot saved.
+    2. Hide the element via JS so it's not visible.
+    3. Spy on ``_attempt_healing`` and ``_heal_after_wait``.
+    4. ``wait_visibility_without_error`` times out (element is hidden).
+    5. Assert neither healing method was called.
+    """
+    from unittest.mock import patch
+
+    from mops.selenium.core.core_element import CoreElement
+
+    row = second_playground_page.row_with_cards
+    row.wait_visibility(silent=True)  # snapshot saved
+
+    # Hide the element so wait_visibility will time out
+    row.driver_wrapper.execute_script('arguments[0].style.display = "none";', row)
+
+    original_attempt = CoreElement._attempt_healing
+    attempt_called = False
+    original_heal_after = CoreElement._heal_after_wait
+    heal_after_called = False
+
+    def _spy_attempt(self, *args, **kwargs):
+        nonlocal attempt_called
+        attempt_called = True
+        return original_attempt(self, *args, **kwargs)
+
+    def _spy_heal_after(self, *args, **kwargs):
+        nonlocal heal_after_called
+        heal_after_called = True
+        return original_heal_after(self, *args, **kwargs)
+
+    with patch.object(CoreElement, '_attempt_healing', _spy_attempt), \
+         patch.object(CoreElement, '_heal_after_wait', _spy_heal_after):
+        row.wait_visibility_without_error(silent=True)
+
+    assert not attempt_called, \
+        '_attempt_healing was called during wait_visibility_without_error'
+    assert not heal_after_called, \
+        '_heal_after_wait was called during wait_visibility_without_error'
+    # Verify element actually is not visible
+    assert not row.is_displayed(silent=True), 'Element should not be visible'
+
+
 def test_parent_healing_not_triggered_during_child_healing(second_playground_page):
     """
     Self-healing on a child must NOT trigger healing on its parent.
