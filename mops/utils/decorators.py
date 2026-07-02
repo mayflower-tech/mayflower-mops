@@ -58,7 +58,7 @@ def retry(exceptions: type | tuple, timeout: int = HALF_WAIT_EL) -> Callable:
 def healing(method: Callable) -> Callable:
     """Attempt self-healing when a :class:`NoSuchElementException` is raised.
 
-    Catches the exception, heals the locator via ``_try_healed_locators``,
+    Catches the exception, heals the locator via ``self._apply_healing()``,
     then retries the original method once with the healed locator.
     """
 
@@ -69,10 +69,8 @@ def healing(method: Callable) -> Callable:
         except NoSuchElementException:
             if not get_config().heal_locators:
                 raise
-            result = self._attempt_healing()
-            if not result:
+            if not self._apply_healing():
                 raise
-            self._try_healed_locators(result)
             return method(self, *args, **kwargs)
 
     return wrapper

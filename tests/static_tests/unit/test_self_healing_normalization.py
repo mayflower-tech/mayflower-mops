@@ -21,11 +21,11 @@ def test_extract_key_without_parent():
 
     # name != locator → name::locator
     el = _make_element('Submit button', '#submit')
-    assert storage._extract_full_locator_key(el) == 'Submit button::#submit'
+    assert storage.extract_full_locator_key(el) == 'Submit button::#submit'
 
     # name == locator → bare locator
     el = _make_element('.row', '.row')
-    assert storage._extract_full_locator_key(el) == '.row'
+    assert storage.extract_full_locator_key(el) == '.row'
 
 
 def test_extract_key_with_parent():
@@ -36,7 +36,7 @@ def test_extract_key_with_parent():
     parent = _make_element('Form', '#form', parent=grandparent)
     child = _make_element('Submit button', '#submit', parent=parent)
 
-    result = storage._extract_full_locator_key(child)
+    result = storage.extract_full_locator_key(child)
     assert result == 'Submit button::#submit -> Form::#form -> Section::#section'
 
 
@@ -50,7 +50,7 @@ def test_extract_key_with_parent_normalized():
     child = _make_element('User card', '#user-12345', parent=parent)
 
     # Default rules don't strip #user-12345 because id rules were removed
-    result = storage._extract_full_locator_key(child)
+    result = storage.extract_full_locator_key(child)
     assert 'User card::#user-12345' in result
 
 
@@ -219,5 +219,5 @@ def test_custom_rules_affect_extracted_key():
     parent = _make_element('Form', '#form-99')
     child = _make_element('User card', '#user-12345', parent=parent)
 
-    result = storage._extract_full_locator_key(child)
+    result = storage.extract_full_locator_key(child)
     assert result == 'User card::#user -> Form::#form'

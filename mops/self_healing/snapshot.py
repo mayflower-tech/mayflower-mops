@@ -13,7 +13,24 @@ from typing import TYPE_CHECKING, Any
 from selenium.common.exceptions import WebDriverException
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mops.base.element import Element
+
+
+def _extract_full_locator_key(element: Element, normalize_fn: Callable[[str], str]) -> str:
+    """Build the full hierarchical locator key for an element.
+
+    :param element: The MOPS Element.
+    :param normalize_fn: A function that normalizes a raw key string (e.g. removes dynamic data).
+    :return: Normalized composite key like ``Name::locator -> ParentName::parent_locator``.
+    """
+    raw_locator_key = element.locator if element.name == element.locator else f'{element.name}::{element.locator}'
+
+    if element.parent:
+        raw_locator_key += f' -> {_extract_full_locator_key(element.parent, normalize_fn)}'
+
+    return normalize_fn(raw_locator_key)
 
 
 @dataclass
@@ -97,16 +114,20 @@ class SnapshotStorage(ABC):
         self._normalization_rules = list(_DEFAULT_NORMALIZATION_RULES)
 
     def _extract_full_locator_key(self, element: Element) -> str:
-        raw_locator_key = element.locator if element.name == element.locator else f'{element.name}::{element.locator}'
+        """Use :meth:`extract_full_locator_key` instead."""
+        return self.extract_full_locator_key(element)
 
-        if element.parent:
-            raw_locator_key += f' -> {self._extract_full_locator_key(element.parent)}'
+    def extract_full_locator_key(self, element: Element) -> str:
+        """Build the full hierarchical locator key for an element.
 
-        return self.normalize_locator_key(raw_locator_key)
+        :param element: The MOPS Element.
+        :return: Normalized composite key like ``Name::locator -> ParentName::parent_locator``.
+        """
+        return _extract_full_locator_key(element, self.normalize_locator_key)
 
     def save_from_element(self, element: Element, web_element: object, driver: object) -> None:
         """Extract snapshot from a live web element and persist it."""
-        locator_key = self._extract_full_locator_key(element)
+        locator_key = self.extract_full_locator_key(element)
 
         if locator_key in self._saved_this_session:
             return

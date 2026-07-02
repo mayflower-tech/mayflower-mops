@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -79,7 +80,11 @@ def configure(**kwargs: object) -> None:
             on_healing_failure=on_failure,
         )
     """
+    valid_fields = {f.name for f in dataclasses.fields(SelfHealingConfig)}
     for key, value in kwargs.items():
+        if key not in valid_fields:
+            msg = f"Unknown configuration key '{key}'. Valid fields: {sorted(valid_fields)}"
+            raise ValueError(msg)
         setattr(_config, key, value)
 
 

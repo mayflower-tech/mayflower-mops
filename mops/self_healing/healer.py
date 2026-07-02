@@ -144,13 +144,27 @@ class Healer:
             self._on_healing_success(result)
         return result
 
-    def heal(self, element_name: str, locator_key: str, locator: str, driver: Any) -> SuccessHealingResult | None:
+    def heal(  # noqa: PLR0911
+        self,
+        element_name: str,
+        locator_key: str,
+        locator: str,
+        driver_wrapper: Any,
+        find_elements_fn: Callable[[str], list[Any]] | None = None,
+        generate_locator_fn: Callable[[Any, Any], list[str]] | None = None,
+    ) -> SuccessHealingResult | None:
         """Try to find a healed locator for a failed element lookup.
 
         :param element_name: Human-readable element name for logging.
         :param locator_key: Storage key used to load the saved snapshot.
         :param locator: The original locator string (for the result record).
-        :param driver: Selenium WebDriver instance.
+        :param driver_wrapper: Driver wrapper with an ``execute_script(script, *args)`` method.
+        :param find_elements_fn: Optional callback ``(tag: str) -> list`` to find
+            all elements with a given tag name. Defaults to Selenium's
+            ``driver.find_elements(By.TAG_NAME, tag)``.
+        :param generate_locator_fn: Optional callback ``(element, driver_wrapper) -> list[str]``
+            to generate candidate locators from a live element. Defaults to
+            :func:`generate_locator`.
         :return: :class:`SuccessHealingResult` if healed, ``None`` otherwise.
         """
         snapshot = self._storage.load(locator_key)
@@ -160,7 +174,7 @@ class Healer:
             return self._fail('no-snapshot', element_name, locator_key, locator)
 
         try:
-            candidates_data: list[dict] = driver.execute_script(_GET_CANDIDATES_JS, snapshot.tag)
+            candidates_data: list[dict] = driver_wrapper.execute_script(_GET_CANDIDATES_JS, snapshot.tag)
         except WebDriverException as exc:
             logger.info('Self-healing: failed to get candidates for "%s": %s', element_name, exc)
             return self._fail('candidates-script-error', element_name, locator_key, locator, exc=exc)
@@ -186,18 +200,22 @@ class Healer:
             )
             return self._fail('below-threshold', element_name, locator_key, locator)
 
-        # Get the actual WebElement by index among elements of the same tag
+        # Get the actual element by index among elements of the same tag
+        _find = find_elements_fn or (lambda tag: driver_wrapper.driver.find_elements(By.TAG_NAME, tag))
+        _gen = generate_locator_fn or generate_locator
+
         healed_locators: list[str] | None = None
         try:
-            web_elements = driver.find_elements(By.TAG_NAME, snapshot.tag)
+            web_elements = _find(snapshot.tag)
             if best_index >= len(web_elements):
                 self._fail('index-out-of-bounds', element_name, locator_key, locator)
-            else:
-                healed_web_element = web_elements[best_index]
-                healed_locators = generate_locator(healed_web_element, driver)
-        except WebDriverException as exc:
+                return None
+            healed_web_element = web_elements[best_index]
+            healed_locators = _gen(healed_web_element, driver_wrapper)
+        except Exception as exc:  # noqa: BLE001
             logger.info('Self-healing: failed to generate locator for "%s": %s', element_name, exc)
             self._fail('generate-locator-error', element_name, locator_key, locator, exc=exc)
+            return None
 
         if healed_locators is None:
             return None

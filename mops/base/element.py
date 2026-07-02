@@ -1072,14 +1072,25 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         """
         return Element
 
-    def _visibility_check(
+    def _wait_visibility_base(
         self, *, timeout: int = WAIT_EL, silent: bool = False, continuous: bool | float = False
     ) -> Element:
-        return Result(
-            execution_result=self._is_displayed(silent=True),
-            log=f'Wait until "{self.name}" becomes visible',
-            exc=TimeoutException(f'"{self.name}" not visible', info=self),
-        )
+        """Wait for element visibility with polling, used by wait_visibility."""
 
-    _visibility_check.__name__ = 'wait_visibility'
-    _wait_visibility_base = wait_continuous(wait_condition(_visibility_check))
+        def _visibility_check(
+            self: Element,
+            *,
+            timeout: int = WAIT_EL,  # noqa: ARG001
+            silent: bool = False,  # noqa: ARG001
+            continuous: bool | float = False,  # noqa: ARG001
+        ) -> Element:
+            return Result(
+                execution_result=self._is_displayed(silent=True),
+                log=f'Wait until "{self.name}" becomes visible',
+                exc=TimeoutException(f'"{self.name}" not visible', info=self),
+            )
+
+        # Give the check a stable name so decorators report "wait_visibility"
+        _visibility_check.__name__ = 'wait_visibility'
+        _check = wait_continuous(wait_condition(_visibility_check))
+        return _check(self, timeout=timeout, silent=silent, continuous=continuous)

@@ -29,7 +29,8 @@ from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
 from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
-from mops.self_healing.healer import Healer, SuccessHealingResult
+from mops.self_healing.healer import SuccessHealingResult
+from mops.self_healing.healer_factory import get_healer
 from mops.shared_utils import _scaled_screenshot, cut_log_data
 from mops.utils.decorators import healing, retry
 from mops.utils.internal_utils import WAIT_EL, get_dict, is_group, safe_call
@@ -44,37 +45,6 @@ if TYPE_CHECKING:
 
     from mops.base.element import Element
     from mops.keyboard_keys import KeyboardKeys
-    from mops.self_healing.snapshot import SnapshotStorage
-
-
-class _HealerState:
-    """Module-level state for the healer singleton."""
-
-    storage: SnapshotStorage | None = None
-    healer: Healer | None = None
-
-
-def _get_healer() -> Healer:
-    """Return the global Healer singleton.
-
-    Re-initialises when ``get_config().storage`` changes (identity check)
-    or when the cached storage is ``None``, so that ``configure()`` calls
-    between tests are picked up.
-    """
-    config = get_config()
-
-    if _HealerState.healer and _HealerState.storage is config.storage and _HealerState.storage is not None:
-        return _HealerState.healer
-
-    _HealerState.storage = config.storage
-    _HealerState.healer = Healer(
-        _HealerState.storage,
-        config.score_threshold,
-        scoring_weights=config.scoring_weights,
-        on_healing_success=config.on_healing_success,
-        on_healing_failure=config.on_healing_failure,
-    )
-    return _HealerState.healer
 
 
 def _parse_healed_locator(healed_locator: str) -> tuple[str, str]:
@@ -586,7 +556,6 @@ class CoreElement(ElementABC, ABC):
             # Save snapshot for future healing
             config = get_config()
             if config.save_snapshots and config.storage:
-                _get_healer()
                 config.storage.save_from_element(self, element, self.driver)
         except (SeleniumInvalidArgumentException, SeleniumInvalidSelectorException) as exc:
             self._raise_invalid_selector_exception(exc)
@@ -602,9 +571,9 @@ class CoreElement(ElementABC, ABC):
         :return: :class:`SuccessHealingResult` if a suitable candidate was found, :obj:`None` otherwise.
         """
         try:
-            healer = _get_healer()
-            locator_key = get_config().storage._extract_full_locator_key(self)
-            result = healer.heal(self.name, locator_key, self.locator, self.driver)
+            healer = get_healer()
+            locator_key = get_config().storage.extract_full_locator_key(self)
+            result = healer.heal(self.name, locator_key, self.locator, self.driver_wrapper)
             if type(result) is SuccessHealingResult:
                 return result
         except Exception as exc:  # noqa: BLE001
@@ -627,11 +596,13 @@ class CoreElement(ElementABC, ABC):
             return healed
         raise NoSuchElementException
 
-    def _heal_after_wait(self) -> bool:
-        """Attempt healing after a wait condition timed out.
+    def _apply_healing(self) -> bool:
+        """Attempt healing and persist the first working locator.
 
-        Persists the first working healed locator so subsequent lookups
-        use it directly. Returns ``True`` if a working locator was found.
+        Called by :func:`@healing <mops.utils.decorators.healing>` and
+        :func:`@healing_after_wait <mops.utils.decorators.healing_after_wait>`.
+
+        :return: :obj:`True` if a healed locator was found and applied.
         """
         result = self._attempt_healing()
         if not result:
@@ -641,6 +612,14 @@ class CoreElement(ElementABC, ABC):
         except NoSuchElementException:
             return False
         return True
+
+    def _heal_after_wait(self) -> bool:
+        """Attempt healing after a wait condition timed out.
+
+        Persists the first working healed locator so subsequent lookups
+        use it directly. Returns ``True`` if a working locator was found.
+        """
+        return self._apply_healing()
 
     def _find_elements(self, wait_parent: bool = False) -> list[SeleniumWebElement | AppiumWebElement]:
         """

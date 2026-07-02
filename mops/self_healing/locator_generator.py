@@ -98,3 +98,84 @@ def _positional_xpath(web_element: object, driver: object) -> str:
         return f'xpath=//{web_element.tag_name}'
     else:
         return f'xpath={path}'
+
+
+def generate_locator_pw(locator_element: object, driver_wrapper: object) -> list[str]:
+    """Generate all possible stable XPath locators from a live Playwright Locator.
+
+    Returns locators ordered by preference (most stable first).
+    The caller should try each in order until one succeeds.
+    Each locator uses the ``xpath=`` prefix used by MOPS.
+
+    Uses Playwright's Locator API (:meth:`get_attribute`, :meth:`evaluate`)
+    instead of Selenium's WebElement API.
+    """
+    try:
+        tag: str = locator_element.evaluate('el => el.tagName.toLowerCase()')
+
+        attrs: dict[str, str] = {}
+        for attr_name in ('id', *_TEST_ATTRS, 'name', 'aria-label', 'placeholder', 'type', 'role', 'href', 'class'):
+            val = locator_element.get_attribute(attr_name)
+            if val:
+                attrs[attr_name] = val.strip()
+
+        text = (locator_element.evaluate('el => (el.textContent || "").trim()') or '').strip()
+    except Exception:  # noqa: BLE001
+        return [_positional_xpath_pw(locator_element, driver_wrapper)]
+
+    providers: list[str] = []
+
+    # id (unique by spec)
+    el_id = attrs.get('id', '')
+    if el_id and ' ' not in el_id:
+        providers.append(f'xpath=//*[@id="{el_id}"]')
+
+    # data-* test attributes
+    for test_attr in _TEST_ATTRS:
+        val = attrs.get(test_attr, '')
+        if val:
+            providers.append(f'xpath=//*[@{test_attr}="{val}"]')
+
+    # name
+    name = attrs.get('name', '')
+    if name:
+        providers.append(f'xpath=//{tag}[@name="{name}"]')
+
+    # aria-label
+    aria = attrs.get('aria-label', '')
+    if aria:
+        escaped = aria.replace('"', '\\"')
+        providers.append(f'xpath=//*[@aria-label="{escaped}"]')
+
+    # type + tag
+    el_type = attrs.get('type', '')
+    if el_type:
+        providers.append(f'xpath=//{tag}[@type="{el_type}"]')
+
+    # stable class (filter out dynamic-looking tokens)
+    cls = attrs.get('class', '')
+    if cls:
+        stable = [c for c in cls.split() if not any(c.lower().startswith(p) for p in _DYNAMIC_CLASS_PREFIXES)]
+        if stable:
+            providers.append(f'xpath=//{tag}[contains(@class, "{stable[0]}")]')
+
+    # visible text (short, single-line)
+    if text and len(text) <= _MAX_TEXT_LENGTH and '\n' not in text:
+        escaped = text.replace('"', '\\"')
+        providers.append(f'xpath=//{tag}[normalize-space(.)="{escaped}"]')
+
+    providers.append(_positional_xpath_pw(locator_element, driver_wrapper))
+    return providers
+
+
+def _positional_xpath_pw(locator_element: object, driver_wrapper: object) -> str:
+    try:
+        path: str = driver_wrapper.execute_script(_GET_POSITIONAL_XPATH_JS, locator_element)
+    except Exception:  # noqa: BLE001
+        try:
+            tag = locator_element.evaluate('el => el.tagName.toLowerCase()')
+        except Exception:  # noqa: BLE001
+            tag = '*'
+        return f'xpath=//{tag}'
+    else:
+        return f'xpath={path}'

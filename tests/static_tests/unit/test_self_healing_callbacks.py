@@ -31,6 +31,14 @@ def _make_snapshot(**overrides: str) -> ElementSnapshot:
     return ElementSnapshot(**defaults)
 
 
+def _make_driver_wrapper(candidates=None, elements=None):
+    """Build a mock driver_wrapper with execute_script and .driver.find_elements."""
+    dw = MagicMock()
+    dw.execute_script.return_value = candidates or []
+    dw.driver.find_elements.return_value = elements or []
+    return dw
+
+
 def _make_candidate(index: int = 0, **extra: str) -> dict:
     """Build a candidate dict with values matching the default snapshot."""
     return {
@@ -53,9 +61,7 @@ def test_success_callback_fired():
     callback = MagicMock()
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
-    driver = MagicMock()
-    driver.execute_script.return_value = [_make_candidate()]
-    driver.find_elements.return_value = [MagicMock()]
+    driver = _make_driver_wrapper(candidates=[_make_candidate()], elements=[MagicMock()])
 
     healer = Healer(storage, 0.7, on_healing_success=callback)
 
@@ -71,9 +77,7 @@ def test_success_callback_not_set():
     """Healing works even when on_healing_success is None."""
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
-    driver = MagicMock()
-    driver.execute_script.return_value = [_make_candidate()]
-    driver.find_elements.return_value = [MagicMock()]
+    driver = _make_driver_wrapper(candidates=[_make_candidate()], elements=[MagicMock()])
 
     healer = Healer(storage, 0.7)
 
@@ -114,6 +118,7 @@ def test_failure_candidates_script_raises():
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
     driver = MagicMock()
+    driver.driver = MagicMock()
     driver.execute_script.side_effect = WebDriverException('browser error')
     healer = Healer(storage, 0.7, on_healing_failure=callback)
 
@@ -129,6 +134,7 @@ def test_failure_no_candidates():
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
     driver = MagicMock()
+    driver.driver = MagicMock()
     driver.execute_script.return_value = []
     healer = Healer(storage, 0.7, on_healing_failure=callback)
 
@@ -145,6 +151,7 @@ def test_failure_score_below_threshold():
     # Snapshot with mismatched attributes/text so score stays low
     storage.load.return_value = _make_snapshot(attributes={'class': 'x'}, text='foo')
     driver = MagicMock()
+    driver.driver = MagicMock()
     driver.execute_script.return_value = [
         _make_candidate(attrs={'class': 'y'}, text='bar', parentTag='div'),
     ]
@@ -162,13 +169,14 @@ def test_failure_best_index_out_of_bounds():
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
     driver = MagicMock()
+    driver.driver = MagicMock()
     # Candidate 0 has low score (mismatch), candidate 1 has high score
     # → best_index = 1  but only 1 real element → OOB
     driver.execute_script.return_value = [
         _make_candidate(index=0, attrs={'id': 'other'}, text='Other'),
         _make_candidate(index=1),
     ]
-    driver.find_elements.return_value = [MagicMock()]  # only 1 element → index 1 is OOB
+    driver.driver.find_elements.return_value = [MagicMock()]  # only 1 element → index 1 is OOB
     healer = Healer(storage, 0.7, on_healing_failure=callback)
 
     with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
@@ -183,9 +191,7 @@ def test_failure_generate_locator_raises():
     callback = MagicMock()
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
-    driver = MagicMock()
-    driver.execute_script.return_value = [_make_candidate()]
-    driver.find_elements.return_value = [MagicMock()]
+    driver = _make_driver_wrapper(candidates=[_make_candidate()], elements=[MagicMock()])
     healer = Healer(storage, 0.7, on_healing_failure=callback)
 
     with patch('mops.self_healing.healer.generate_locator', side_effect=WebDriverException('no locator')):
@@ -215,9 +221,7 @@ def test_multiple_locators_stored_in_result():
     """All generated locators are stored in healed_locators_candidates."""
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
-    driver = MagicMock()
-    driver.execute_script.return_value = [_make_candidate()]
-    driver.find_elements.return_value = [MagicMock()]
+    driver = _make_driver_wrapper(candidates=[_make_candidate()], elements=[MagicMock()])
 
     healer = Healer(storage, 0.7)
 
@@ -247,12 +251,13 @@ def test_siblings_matching_boosts_score():
     siblings = [{'tag': 'span', 'attrs': {'class': 'helper'}, 'text': 'label'}]
     storage.load.return_value = _make_siblings_snapshot(siblings)
     driver = MagicMock()
+    driver.driver = MagicMock()
     candidate_with_siblings = _make_candidate(
         siblings=[{'tag': 'span', 'attrs': {'class': 'helper'}, 'text': 'label'}],
     )
     candidate_no_siblings = _make_candidate(siblings=[])
     driver.execute_script.return_value = [candidate_with_siblings, candidate_no_siblings]
-    driver.find_elements.return_value = [MagicMock()]
+    driver.driver.find_elements.return_value = [MagicMock()]
 
     healer_no_threshold = Healer(storage, 0.0)
 
@@ -274,6 +279,7 @@ def test_mismatched_siblings_lower_score():
     storage.load.return_value = _make_siblings_snapshot(snap_siblings)
 
     driver = MagicMock()
+    driver.driver = MagicMock()
     candidate = _make_candidate(
         attrs={'id': 'submit'},
         text='Click',
@@ -281,7 +287,7 @@ def test_mismatched_siblings_lower_score():
         siblings=[{'tag': 'div', 'attrs': {'class': 'other'}, 'text': 'different'}],
     )
     driver.execute_script.return_value = [candidate]
-    driver.find_elements.return_value = [MagicMock()]
+    driver.driver.find_elements.return_value = [MagicMock()]
 
     healer = Healer(storage, 0.0)
 
@@ -303,9 +309,7 @@ def test_success_callback_raises_propagates():
     """If on_healing_success raises, the exception propagates to the caller."""
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
-    driver = MagicMock()
-    driver.execute_script.return_value = [_make_candidate()]
-    driver.find_elements.return_value = [MagicMock()]
+    driver = _make_driver_wrapper(candidates=[_make_candidate()], elements=[MagicMock()])
 
     def crash(_result):
         raise RuntimeError('callback failed')
