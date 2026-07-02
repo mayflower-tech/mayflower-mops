@@ -76,13 +76,32 @@ def healing(method: Callable) -> Callable:
     return wrapper
 
 
+def no_healing(method: Callable) -> Callable:
+    """Temporarily disable self-healing for the wrapped method.
+
+    Sets ``heal_locators`` to :obj:`False` on the global config before the call
+    and restores the original value afterwards. Use on methods that must never
+    trigger healing (e.g. ``is_displayed``, ``wait_hidden``).
+    """
+
+    @wraps(method)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        config = get_config()
+        saved = config.heal_locators
+        config.heal_locators = False
+        try:
+            return method(*args, **kwargs)
+        finally:
+            config.heal_locators = saved
+
+    return wrapper
+
+
 def healing_after_wait(method: Callable) -> Callable:
     """Defer self-healing until a wait condition times out.
 
     Wraps a ``@wait_condition`` method. When the wait times out, attempts
-    healing and retries ONCE. Does NOT use global flags — simply catches
-    ``Exception`` with a ``_timeout`` attribute and calls
-    ``self._heal_after_wait()``.
+    healing and retries ONCE.
     """
 
     @wraps(method)
@@ -90,7 +109,7 @@ def healing_after_wait(method: Callable) -> Callable:
         try:
             return method(self, *args, **kwargs)
         except Exception as exc:
-            if getattr(exc, '_timeout', None) is not None:
+            if getattr(exc, '_timeout', None) is not None and get_config().heal_locators:
                 heal = getattr(self, '_heal_after_wait', None)
                 if heal and heal():
                     return method(self, *args, **kwargs)

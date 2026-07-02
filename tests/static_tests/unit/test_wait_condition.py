@@ -1,6 +1,7 @@
 import time
 from types import SimpleNamespace
 from typing import Union
+from unittest.mock import patch
 
 import pytest
 from mops.exceptions import TimeoutException
@@ -176,8 +177,10 @@ def test_wait_condition_heal_on_timeout_called():
     """After wait times out, _heal_after_wait is called."""
     namespace = MockHealableNamespace('wait', call_count=10, heal_after_wait_result=False)
 
-    with pytest.raises(TimeoutException):
-        namespace.wait_something(timeout=0.1)
+    with patch('mops.utils.decorators.get_config') as mock_cfg:
+        mock_cfg.return_value.heal_locators = True
+        with pytest.raises(TimeoutException):
+            namespace.wait_something(timeout=0.1)
 
     assert namespace.heal_after_wait_called
 
@@ -186,7 +189,9 @@ def test_wait_condition_heal_success_retries():
     """_heal_after_wait returns True -> wait is retried and succeeds."""
     namespace = MockHealableNamespace('wait', call_count=10, heal_after_wait_result=True)
 
-    result = namespace.wait_something(timeout=0.1)
+    with patch('mops.utils.decorators.get_config') as mock_cfg:
+        mock_cfg.return_value.heal_locators = True
+        result = namespace.wait_something(timeout=0.1)
 
     assert result is namespace
     assert namespace.heal_after_wait_called
@@ -196,8 +201,10 @@ def test_wait_condition_heal_fails_raises():
     """_heal_after_wait returns False -> original exception raised."""
     namespace = MockHealableNamespace('wait', call_count=10, heal_after_wait_result=False)
 
-    with pytest.raises(TimeoutException) as exc_info:
-        namespace.wait_something(timeout=0.1)
+    with patch('mops.utils.decorators.get_config') as mock_cfg:
+        mock_cfg.return_value.heal_locators = True
+        with pytest.raises(TimeoutException) as exc_info:
+            namespace.wait_something(timeout=0.1)
 
     assert 'wait some condition failed!' in str(exc_info.value)
     assert namespace.heal_after_wait_called
