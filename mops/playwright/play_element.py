@@ -15,7 +15,7 @@ from mops.exceptions import (
 from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
 from mops.self_healing.config import get_config
-from mops.self_healing.healer import SuccessHealingResult
+from mops.self_healing.healer import FailedHealingResult, SuccessHealingResult
 from mops.self_healing.healer_factory import get_healer
 from mops.self_healing.locator_generator import generate_locator_pw
 from mops.shared_utils import cut_log_data, get_image
@@ -585,10 +585,14 @@ class PlayElement(ElementABC, Logging, ABC):
     def _try_healed_locators(self, result: SuccessHealingResult) -> None:
         """Try each healed locator candidate and persist the first working one.
 
+        Fires ``on_healing_success`` after a candidate passes DOM verification,
+        or ``on_healing_failure`` if none of the candidates work.
+
         :param result: The healing result containing candidate locators.
         :raises NoSuchElementException: If no candidate locator resolves to an element.
         """
         base = self._get_base(wait_strategy=False)
+        config = get_config()
         for locator_str in result.healed_locators_candidates:
             selector = self._parse_healed_locator_pw(locator_str)
             try:
@@ -597,9 +601,23 @@ class PlayElement(ElementABC, Logging, ABC):
                     result.healed_locator = locator_str
                     self.locator = selector
                     self._element = candidate
+                    # Fire success callback AFTER locator is verified against DOM
+                    if config.on_healing_success:
+                        config.on_healing_success(result)
                     return
             except Error:
                 continue
+        # None of the candidates worked — fire failure callback
+        if config.on_healing_failure:
+            result = FailedHealingResult(
+                element_name=result.element_name,
+                locator_key='',
+                locator=result.original_locator,
+                reason='no-verified-locator',
+                error='All healed locator candidates failed DOM verification',
+            )
+            config.on_healing_failure(result)
+
         raise NoSuchElementException
 
     def _apply_healing(self) -> bool:

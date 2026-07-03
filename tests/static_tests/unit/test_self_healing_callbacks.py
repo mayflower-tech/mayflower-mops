@@ -56,21 +56,22 @@ def _make_candidate(index: int = 0, **extra: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_success_callback_fired():
-    """Healing success fires on_healing_success with HealingResult."""
+def test_success_callback_not_fired_during_heal():
+    """on_healing_success does NOT fire during heal() — it fires later in _try_healed_locators."""
     callback = MagicMock()
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
     driver = _make_driver_wrapper(candidates=[_make_candidate()], elements=[MagicMock()])
 
-    healer = Healer(storage, 0.7, on_healing_success=callback)
+    healer = Healer(storage, 0.7)
 
     with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
         result = healer.heal('btn', 'key', '#submit', driver)
 
     assert result is not None
     assert isinstance(result, SuccessHealingResult)
-    callback.assert_called_once_with(result)
+    assert result.healed_locator is None  # not set until _try_healed_locators
+    callback.assert_not_called()  # callback fires AFTER DOM verification
 
 
 def test_success_callback_not_set():
@@ -305,22 +306,19 @@ def test_mismatched_siblings_lower_score():
 # ---------------------------------------------------------------------------
 
 
-def test_success_callback_raises_propagates():
-    """If on_healing_success raises, the exception propagates to the caller."""
+def test_success_callback_not_fired_by_heal():
+    """on_healing_success is not fired by heal() — only by _try_healed_locators."""
     storage = MagicMock()
     storage.load.return_value = _make_snapshot()
     driver = _make_driver_wrapper(candidates=[_make_candidate()], elements=[MagicMock()])
 
-    def crash(_result):
-        raise RuntimeError('callback failed')
-
-    healer = Healer(storage, 0.7, on_healing_success=crash)
-
-    import pytest
+    healer = Healer(storage, 0.7)
 
     with patch('mops.self_healing.healer.generate_locator', return_value=['xpath=//button']):
-        with pytest.raises(RuntimeError, match='callback failed'):
-            healer.heal('btn', 'key', '#submit', driver)
+        result = healer.heal('btn', 'key', '#submit', driver)
+
+    assert result is not None
+    assert isinstance(result, SuccessHealingResult)
 
 
 def test_failure_callback_does_not_crash_healing():

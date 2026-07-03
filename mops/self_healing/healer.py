@@ -112,13 +112,11 @@ class Healer:
         storage: SnapshotStorage,
         score_threshold: float,
         scoring_weights: ScoringWeights | None = None,
-        on_healing_success: Callable[[SuccessHealingResult], None] | None = None,
         on_healing_failure: Callable[[FailedHealingResult], None] | None = None,
     ) -> None:
         self._storage = storage
         self._score_threshold = score_threshold
         self._scoring_weights = scoring_weights or ScoringWeights()
-        self._on_healing_success = on_healing_success
         self._on_healing_failure = on_healing_failure
 
     def _fail(
@@ -137,12 +135,6 @@ class Healer:
         )
         if self._on_healing_failure:
             self._on_healing_failure(result)
-
-    def _succeed(self, result: SuccessHealingResult) -> SuccessHealingResult:
-        """Fire success callback and return the result."""
-        if self._on_healing_success:
-            self._on_healing_success(result)
-        return result
 
     def heal(  # noqa: PLR0911
         self,
@@ -236,7 +228,7 @@ class Healer:
             best_score,
         )
 
-        return self._succeed(result)
+        return result
 
 
 def _score_similarity(

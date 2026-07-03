@@ -29,7 +29,7 @@ from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
 from mops.selenium.sel_utils import ActionChains
 from mops.self_healing.config import get_config
-from mops.self_healing.healer import SuccessHealingResult
+from mops.self_healing.healer import FailedHealingResult, SuccessHealingResult
 from mops.self_healing.healer_factory import get_healer
 from mops.shared_utils import _scaled_screenshot, cut_log_data
 from mops.utils.decorators import healing, retry
@@ -581,7 +581,11 @@ class CoreElement(ElementABC, ABC):
             return None
 
     def _try_healed_locators(self, result: SuccessHealingResult) -> SeleniumWebElement:
-        """Try each healed locator and persist the first working one."""
+        """Try each healed locator and persist the first working one.
+
+        Fires ``on_healing_success`` after a candidate passes DOM verification,
+        or ``on_healing_failure`` if none of the candidates work.
+        """
         base = self._get_base(wait_strategy=False)
         for locator in result.healed_locators_candidates:
             healed_locator_type, healed_locator_value = _parse_healed_locator(locator)
@@ -593,7 +597,23 @@ class CoreElement(ElementABC, ABC):
             self.locator_type = healed_locator_type
             self.locator = healed_locator_value
             self._cached_element = healed
+            # Fire success callback AFTER locator is verified against DOM
+            config = get_config()
+            if config.on_healing_success:
+                config.on_healing_success(result)
             return healed
+        # None of the candidates worked — fire failure callback
+        config = get_config()
+        if config.on_healing_failure:
+            config.on_healing_failure(
+                FailedHealingResult(
+                    element_name=result.element_name,
+                    locator_key='',
+                    locator=result.original_locator,
+                    reason='no-verified-locator',
+                    error='All healed locator candidates failed find_element()',
+                )
+            )
         raise NoSuchElementException
 
     def _apply_healing(self) -> bool:

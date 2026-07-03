@@ -33,7 +33,6 @@ def get_healer() -> Healer:
         _HealerState.storage,
         config.score_threshold,
         scoring_weights=config.scoring_weights,
-        on_healing_success=config.on_healing_success,
         on_healing_failure=config.on_healing_failure,
     )
     return _HealerState.healer
