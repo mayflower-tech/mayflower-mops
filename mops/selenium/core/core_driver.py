@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from functools import cached_property
 import time
 from typing import TYPE_CHECKING, Any
@@ -223,7 +224,11 @@ class CoreDriver(Logging, DriverWrapperABC):
 
         :return: :obj:`None`
         """
-        self.driver.quit()
+        if self.is_cdp:
+            with contextlib.suppress(SeleniumWebDriverException):
+                self.driver.quit()
+        else:
+            self.driver.quit()
 
     def set_cookie(self, cookies: list[dict]) -> CoreDriver:
         """

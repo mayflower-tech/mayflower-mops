@@ -133,7 +133,6 @@ def wait_condition(method: Callable) -> Callable:
         validate_timeout(timeout)
         validate_silent(silent)
 
-        should_increase_delay = self.driver_wrapper.is_appium
         delay = WAIT_METHODS_DELAY
         is_log_needed = not silent
         start_time = time.time()
@@ -153,8 +152,7 @@ def wait_condition(method: Callable) -> Callable:
 
             time.sleep(delay)
 
-            if should_increase_delay:
-                delay = increase_delay(delay)
+            delay = increase_delay(delay)
 
         result.exc._timeout = timeout
         raise result.exc

@@ -2,6 +2,25 @@
 
 <br>
 
+## v3.5.2
+
+### Added
+- `DriverWrapper.is_cdp` flag to identify CDP-connected driver instances
+- `PlayDriver.quit` graceful error handling for CDP contexts; tracing skip when `is_cdp` is set
+- `CoreDriver.quit` graceful error handling for externally-managed browsers when `is_cdp` is set
+- `PlayDriver.get_inner_window_size` null-safe viewport handling (returns `Size(0, 0)` when viewport is `None`)
+
+---
+
+## v3.5.1
+
+*Release date: 2026-06-23*
+
+### Changed
+- Selenium & Playwright: exponential delay starting at 0.1 seconds between requests for all waiting methods
+
+---
+
 ## v3.5.0
 *Release date: 2026-04-22*
 
