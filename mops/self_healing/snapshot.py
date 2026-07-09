@@ -10,8 +10,6 @@ import re
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
-from selenium.common.exceptions import WebDriverException
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -134,7 +132,7 @@ class SnapshotStorage(ABC):
 
         try:
             raw = driver.execute_script(_GET_ELEMENT_SNAPSHOT_JS, web_element)
-        except WebDriverException:
+        except Exception:  # noqa: BLE001
             return
 
         snapshot = ElementSnapshot(

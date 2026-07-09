@@ -295,9 +295,9 @@ class CoreElement(ElementABC, ABC):
         value = self.get_attribute('value', silent=True)
         return '' if value is None else value
 
-    def _is_available(self) -> bool:
+    def is_available(self) -> bool:
         """
-        Check if the element is available in DOM tree (internal, without @no_healing).
+        Check if the element is available in DOM tree.
 
         :return: :class:`bool` - :obj:`True` if present in DOM
         """
@@ -311,23 +311,15 @@ class CoreElement(ElementABC, ABC):
 
         return element
 
-    def is_available(self) -> bool:
+    def is_displayed(self, silent: bool = False) -> bool:
         """
-        Check if the element is available in DOM tree.
-
-        :return: :class:`bool` - :obj:`True` if present in DOM
-        """
-        return self._is_available()
-
-    def _is_displayed(self, silent: bool = False) -> bool:
-        """
-        Check if the element is displayed (internal, without @no_healing).
+        Check if the element is displayed.
 
         :param silent: If :obj:`True`, suppresses logging.
         :type silent: bool
         :return: :class:`bool`
         """
-        is_displayed = self._is_available()
+        is_displayed = self.is_available()
 
         if is_displayed:
             desired_element = self._element or self._cached_element
@@ -337,16 +329,6 @@ class CoreElement(ElementABC, ABC):
             self.log(f'Check displaying of "{self.name}" - {is_displayed}')
 
         return is_displayed
-
-    def is_displayed(self, silent: bool = False) -> bool:
-        """
-        Check if the element is displayed.
-
-        :param silent: If :obj:`True`, suppresses logging.
-        :type silent: bool
-        :return: :class:`bool`
-        """
-        return self._is_displayed(silent=silent)
 
     def is_hidden(self, silent: bool = False) -> bool:
         """

@@ -63,8 +63,6 @@ class PlayElement(ElementABC, Logging, ABC):
         if not element:
             driver = self._get_base()
             element = driver.locator(self.locator)
-            self._element = element
-            self._save_snapshot(element)
 
         return element
 
@@ -345,37 +343,16 @@ class PlayElement(ElementABC, Logging, ABC):
         except Error as exc:
             raise NoSuchElementException(str(exc)) from exc
 
-    def _is_available(self) -> bool:
-        """
-        Check if the element is available in DOM tree (internal).
-
-        :return: :class:`bool` - :obj:`True` if present in DOM
-        """
-        return bool(len(self.element.element_handles()))
-
     def is_available(self) -> bool:
         """
         Check if the element is available in DOM tree.
 
         :return: :class:`bool` - :obj:`True` if present in DOM
         """
-        return self._is_available()
-
-    def _is_displayed(self, silent: bool = False) -> bool:
-        """
-        Check if the element is displayed (internal).
-
-        :param silent: If :obj:`True`, suppresses logging.
-        :type silent: bool
-        :return: :class:`bool`
-        """
-        if not silent:
-            self.log(f'Check visibility of "{self.name}"')
-
-        try:
-            return self._first_element.is_visible()
-        except Error as exc:
-            raise InvalidSelectorException(exc.message) from exc
+        result = bool(len(self.element.element_handles()))
+        if result:
+            self._save_snapshot(self._first_element)
+        return result
 
     def is_displayed(self, silent: bool = False) -> bool:
         """
@@ -385,7 +362,17 @@ class PlayElement(ElementABC, Logging, ABC):
         :type silent: bool
         :return: :class:`bool`
         """
-        return self._is_displayed(silent=silent)
+        if not silent:
+            self.log(f'Check visibility of "{self.name}"')
+
+        try:
+            result = self._first_element.is_visible()
+        except Error as exc:
+            raise InvalidSelectorException(exc.message) from exc
+        else:
+            if result:
+                self._save_snapshot(self._first_element)
+            return result
 
     def is_hidden(self, silent: bool = False) -> bool:
         """
@@ -556,7 +543,10 @@ class PlayElement(ElementABC, Logging, ABC):
         """Save a DOM snapshot for the current element if snapshot saving is enabled."""
         config = get_config()
         if config.save_snapshots and config.storage:
-            config.storage.save_from_element(self, locator_element, self.driver_wrapper)
+            try:
+                config.storage.save_from_element(self, locator_element, self.driver_wrapper)
+            except Exception as exc:  # noqa: BLE001
+                self.log(f'Failed to save snapshot for "{self.name}": {exc}', level='debug')
 
     def _attempt_healing(self) -> SuccessHealingResult | None:
         """Attempt to heal a failed element lookup using the self-healing subsystem.

@@ -457,7 +457,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         :return: :class:`Element`
         """
         return Result(
-            execution_result=self._is_available(),
+            execution_result=self.is_available(),
             log=f'Wait until presence of "{self.name}"',
             exc=TimeoutException(f'"{self.name}" not available in DOM', info=self),
         )
@@ -1085,7 +1085,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
             continuous: bool | float = False,  # noqa: ARG001
         ) -> Element:
             return Result(
-                execution_result=self._is_displayed(silent=True),
+                execution_result=self.is_displayed(silent=True),
                 log=f'Wait until "{self.name}" becomes visible',
                 exc=TimeoutException(f'"{self.name}" not visible', info=self),
             )
