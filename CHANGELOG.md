@@ -2,7 +2,19 @@
 
 <br>
 
-## v3.5.2
+## v4.0.0rc
+
+*Release date: 2026-07-14*
+
+### Added
+- **Self-healing locators** — automatic broken-locator recovery for Selenium and Playwright via DOM snapshots and similarity scoring
+- `@no_healing` decorator — temporarily disables self-healing for the wrapped method
+- `configure()` key validation — raises `ValueError` for unknown config keys
+
+### Fixed
+- `on_healing_success` callback fires before locator verification — now fires after DOM check with `healed_locator` populated
+
+---
 
 ### Added
 - `DriverWrapper.is_cdp` flag to identify CDP-connected driver instances
