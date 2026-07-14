@@ -16,6 +16,8 @@
 
 ---
 
+## v3.5.2
+
 ### Added
 - `DriverWrapper.is_cdp` flag to identify CDP-connected driver instances
 - `PlayDriver.quit` graceful error handling for CDP contexts; tracing skip when `is_cdp` is set
