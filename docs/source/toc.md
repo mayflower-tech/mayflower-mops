@@ -28,6 +28,7 @@ includehidden:
 caption: Other
 ---
 
+other/i18n
 other/objects_initialisation
 other/visual_comparison
 other/self_healing
@@ -63,4 +64,3 @@ caption: Project Links
 GitHub <https://github.com/CustomEnv/mops>
 PyPI <https://pypi.org/project/mops/>
 ```
-

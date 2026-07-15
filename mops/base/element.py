@@ -25,6 +25,7 @@ from mops.exceptions import (
 )
 from mops.mixins.driver_mixin import DriverMixin, get_driver_wrapper_from_object
 from mops.mixins.internal_mixin import InternalMixin, get_element_info
+from mops.mixins.objects.locator import Locator
 from mops.mixins.objects.scrolls import ScrollTo, ScrollTypes, scroll_into_view_blocks
 from mops.mixins.objects.visual_comaprison_mixin import hide_before_screenshot, reveal_after_screenshot
 from mops.mixins.objects.wait_result import Result
@@ -32,6 +33,7 @@ from mops.playwright.play_element import PlayElement
 from mops.selenium.elements.mobile_element import MobileElement
 from mops.selenium.elements.web_element import WebElement
 from mops.utils.decorators import healing, healing_after_wait, wait_condition, wait_continuous
+from mops.utils.i18n_translator import I18nTranslator
 from mops.utils.internal_utils import (
     QUARTER_WAIT_EL,
     WAIT_EL,
@@ -45,6 +47,7 @@ from mops.utils.previous_object_driver import PreviousObjectDriver, set_instance
 from mops.visual_comparison import VisualComparison
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from typing import Self
 
     from PIL.Image import Image
@@ -53,7 +56,6 @@ if TYPE_CHECKING:
     from mops.base.group import Group
     from mops.keyboard_keys import KeyboardKeys
     from mops.mixins.objects.box import Box
-    from mops.mixins.objects.locator import Locator
     from mops.mixins.objects.size import Size
 
 
@@ -87,6 +89,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
     _initialized: bool = False
     _is_locator_configured: bool = False
     _base_cls: type[PlayElement, MobileElement, WebElement]
+    _translator: I18nTranslator | None = None
 
     source_locator: Locator | str
 
@@ -118,6 +121,7 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         parent: Group | Element | bool = None,
         wait: bool | None = None,
         driver_wrapper: DriverWrapper | Any = None,
+        avoid_translation: bool | None = None,
     ):
         """
         Initialize an Element based on the current driver.
@@ -136,10 +140,14 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
         :param driver_wrapper: The :class:`.DriverWrapper` instance or
          an object containing it to be used for this element.
         :type driver_wrapper: typing.Union[DriverWrapper, typing.Any]
+        :param avoid_translation: If `True`, the element will not be translated with i18n
+        :type avoid_translation: typing.Optional[bool]
         """
         self.driver_wrapper = get_driver_wrapper_from_object(driver_wrapper)
 
         self.source_locator = locator
+        locator = locator if avoid_translation else self._prepare_locator(locator)
+
         self.locator = locator
         self.name = name or locator
         self.parent = parent
@@ -224,6 +232,37 @@ class Element(DriverMixin, InternalMixin, Logging, ElementABC, metaclass=Element
     def log_locator(self, value: str) -> None:
         """Set the element locator string for logging."""
         self._log_locator = value
+
+    @classmethod
+    def get_translator(cls) -> I18nTranslator:
+        """Return the active translator, instantiating a default one if required."""
+        if Element._translator is None:
+            Element._translator = I18nTranslator()
+        return Element._translator
+
+    @classmethod
+    def configure_translator(cls, *, path: str | Path, locale: str | None = None) -> I18nTranslator:
+        """Configure the shared translator with a specific catalogue."""
+        translator = cls.get_translator()
+        translator.configure(path=path, locale=locale)
+        return translator
+
+    def get_translated_text(self, text: str) -> str:
+        """Return translated text or the original value when no translation found."""
+        if not isinstance(text, str) or not text:
+            return text
+        return self.get_translator().resolve_placeholders(text)
+
+    def _prepare_locator(self, locator: str) -> str:
+        result = locator
+
+        if isinstance(locator, Locator):
+            for k, v in vars(locator).items():
+                setattr(locator, k, self.get_translated_text(v) if v else v)
+        else:
+            result = self.get_translated_text(locator)
+
+        return result
 
     # Following methods works same for both Selenium/Appium and Playwright APIs using internal methods
 

@@ -34,6 +34,7 @@ class Group(Element):
         parent: Group | Element | bool = None,
         wait: bool | None = None,
         driver_wrapper: DriverWrapper | Any = None,
+        avoid_translation: bool | None = None,
     ):
         """
         Initialize a group of elements based on the current driver.
@@ -56,6 +57,8 @@ class Group(Element):
         :param driver_wrapper: The :class:`.DriverWrapper` instance or
          an object containing it to be used for entire group.
         :type driver_wrapper: typing.Union[DriverWrapper, typing.Any]
+        :param avoid_translation: If `True`, the element will not be translated with i18n
+        :type avoid_translation: typing.Optional[bool]
         """
         super().__init__(
             locator=locator,
@@ -63,6 +66,7 @@ class Group(Element):
             parent=parent,
             wait=wait,
             driver_wrapper=driver_wrapper,
+            avoid_translation=avoid_translation,
         )
 
     def _modify_sub_elements(self) -> None:

@@ -1,32 +1,22 @@
-<p align="center">
-  <a href="https://mops.readthedocs.io"><img src="https://raw.githubusercontent.com/CustomEnv/mops/master/docs/source/_static/preview.png"></a>
-</p>
-
-<h2 align="center">Automation Beyond Limits</h2>
-
-<p align="center">
-    <a href="https://github.com/CustomEnv/mops/blob/master/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/CustomEnv/mops?logo=github&color=%234F2684&labelColor=%232E353B"></a>
-    <a href="https://pypi.org/project/mops/"><img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/mops?logo=pypi&labelColor=%232E353B"></a>
-    <a href="https://pypi.org/project/mops/"><img alt="PyPI - Version" src="https://img.shields.io/pypi/v/mops?logo=pypi&labelColor=%232E353B"></a>
-</p> 
+<h3 align="center">Mayflower internal tool for test automation</h2>
 
 <p align="center">
     <a href="https://mops.readthedocs.io"><img alt="Documentation Status" src="https://img.shields.io/readthedocs/mops?logo=readthedocs&labelColor=%232E353B&label=docs"></a>
-    <a href="https://github.com/CustomEnv/mops/actions/workflows/static_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/static_tests.yml?branch=master&logo=github&label=Unit%20Tests&labelColor=%232E353B"></a>
-    <a href="https://github.com/CustomEnv/mops/actions/workflows/playwright_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/playwright_tests.yml?branch=master&logo=github&label=Playwright%20Tests&labelColor=%232E353B"></a>
+    <a href="https://github.com/mayflower-tech/mayflower-mops/actions/workflows/static_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/static_tests.yml?branch=master&logo=github&label=Unit%20Tests&labelColor=%232E353B"></a>
+    <a href="https://github.com/mayflower-tech/mayflower-mops/actions/workflows/playwright_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/playwright_tests.yml?branch=master&logo=github&label=Playwright%20Tests&labelColor=%232E353B"></a>
 </p> 
 
 <p align="center">
-    <a href="https://github.com/CustomEnv/mops/actions/workflows/selenium_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/selenium_tests.yml?branch=master&logo=github&label=Selenium%20Tests&labelColor=%232E353B"></a>
-    <a href="https://github.com/CustomEnv/mops/actions/workflows/selenium_safari_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/selenium_safari_tests.yml?branch=master&logo=github&label=Selenium%20Safari%20Tests&labelColor=%232E353B"></a>
-    <a href="https://github.com/CustomEnv/mops/actions/workflows/appium_android_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/appium_android_tests.yml?branch=master&logo=github&label=Android%20Tests&labelColor=%232E353B"></a>
-    <a href="https://github.com/CustomEnv/mops/actions/workflows/appium_ios_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/appium_ios_tests.yml?branch=master&logo=github&label=iOS%20Tests&labelColor=%232E353B"></a>
+    <a href="https://github.com/mayflower-tech/mayflower-mops/actions/workflows/selenium_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/selenium_tests.yml?branch=master&logo=github&label=Selenium%20Tests&labelColor=%232E353B"></a>
+    <a href="https://github.com/mayflower-tech/mayflower-mops/actions/workflows/selenium_safari_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/selenium_safari_tests.yml?branch=master&logo=github&label=Selenium%20Safari%20Tests&labelColor=%232E353B"></a>
+    <a href="https://github.com/mayflower-tech/mayflower-mops/actions/workflows/appium_android_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/appium_android_tests.yml?branch=master&logo=github&label=Android%20Tests&labelColor=%232E353B"></a>
+    <a href="https://github.com/mayflower-tech/mayflower-mops/actions/workflows/appium_ios_tests.yml"><img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/CustomEnv/mops/appium_ios_tests.yml?branch=master&logo=github&label=iOS%20Tests&labelColor=%232E353B"></a>
 </p>
 
 
 > [!NOTE]
-> Previously known as [dyatel-wrapper](https://github.com/CustomEnv/dyatel-wrapper). 
-> This project follows the versioning of `dyatel-wrapper`.
+> Forked from [mops](https://github.com/CustomEnv/mops). 
+> Some links may refer to the original repository.
 
 
 Mops is a Python framework that seamlessly wraps over Selenium, Appium, and sync Playwright,
@@ -56,10 +46,4 @@ Mops is an open-source project, and we welcome contributions from the community.
 
 ## License
 
-Mops is licensed under the Apache License. See the [LICENSE](https://github.com/CustomEnv/mops/blob/master/LICENSE) file for more details.
-
-## Support
-
-If you encounter any issues or have questions, please feel free to reach out via our [GitHub Issues](https://github.com/CustomEnv/mops/issues) page.
-
-Thank you for choosing Mops for your automation needs!
+Mops is licensed under the Apache License. See the [LICENSE](https://github.com/mayflower-tech/mayflower-mops/blob/master/LICENSE) file for more details.
