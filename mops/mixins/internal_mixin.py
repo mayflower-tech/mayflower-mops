@@ -6,8 +6,10 @@ from typing import Any
 from mops.utils.internal_utils import (
     extract_all_named_objects,
     extract_named_objects,
-    is_driver_wrapper,
 )
+
+_shadow_classes: dict[tuple[type, str], type] = {}
+_class_configured: dict[type, type] = {}
 
 
 def get_element_info(element: Any, label: str = 'Selector=') -> str:
@@ -47,6 +49,7 @@ def get_driver_instance(driver_type: type, instance: type) -> bool:
 
 class InternalMixin:
     driver: None
+    driver_wrapper: None
 
     def _driver_is_instance(self, instance: type) -> bool:
         """Check if the current driver is an instance of the given type."""
@@ -56,33 +59,58 @@ class InternalMixin:
         if not hasattr(self, var):
             setattr(self, var, value)
 
-    def _get_protected_attrs(self: Any, current_obj_cls: type) -> set:
-        if not is_driver_wrapper(self):
-            return set(get_all_static_attributes(current_obj_cls))
-
+    def _get_protected_attrs(self: Any, current_obj_cls: type) -> frozenset:
         if '_framework_attrs' not in current_obj_cls.__dict__:
-            current_obj_cls._framework_attrs = set(get_all_static_attributes(current_obj_cls))
+            current_obj_cls._framework_attrs = frozenset(get_all_static_attributes(current_obj_cls))
 
         return current_obj_cls.__dict__['_framework_attrs']
 
-    def _set_static(self: Any, cls: type) -> None:
+    def _set_static(self: Any, cls: type, with_shadow: bool) -> None:
         """
-        Set static from base cls (Web/Mobile/Play Element/Page etc.)
+        Set attributes from base cls onto the class. Uses per-driver shadow
+        classes when multiple driver types are active.
 
         :return: None
         """
-        current_obj_cls = self.__class__
+        obj_cls = self.__class__
 
-        if current_obj_cls.__dict__.get('_configured') is cls:
+        if _class_configured.get(obj_cls) is cls:
             return
 
-        protected = self._get_protected_attrs(current_obj_cls)
+        protected = self._get_protected_attrs(obj_cls)
+
+        if with_shadow and self.driver_wrapper.session.has_different_driver_types():
+            obj_cls = self._set_shadow_class(protected)
 
         for name, value in get_static_attributes(cls).items():
             if name not in protected:
-                setattr(current_obj_cls, name, value)
+                setattr(obj_cls, name, value)
 
-        current_obj_cls._configured = cls
+        _class_configured[obj_cls] = cls
+
+    def _set_shadow_class(self, protected: frozenset) -> type:
+        """
+        Create or reuse a per-driver shadow subclass. The given *protected*
+        set was computed from the original class before any attributes were
+        injected, so the shadow class starts with the same baseline.
+
+        :param protected: pre-computed _framework_attrs of the original class.
+        :return: the shadow class (a subtype of the original class).
+        """
+        original_cls = self.__class__
+        key = (original_cls, self.driver_wrapper._base_cls.__name__)
+        obj_cls = _shadow_classes.get(key)
+        if not obj_cls:
+            obj_cls = type(
+                original_cls.__name__,
+                (original_cls,),
+                {'_shadow_class': True, '_framework_attrs': protected},
+            )
+            _shadow_classes[key] = obj_cls
+
+        self.__class__ = obj_cls
+
+        return obj_cls
 
     def _repr_builder(self: Any) -> str | None:
         class_name = self.__class__.__name__
