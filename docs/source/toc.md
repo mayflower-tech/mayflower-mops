@@ -31,6 +31,7 @@ caption: Other
 other/i18n
 other/objects_initialisation
 other/visual_comparison
+other/self_healing
 ```
 
 ```{toctree}

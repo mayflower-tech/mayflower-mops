@@ -6,11 +6,20 @@ from typing import TYPE_CHECKING, Any
 from playwright.sync_api import Error, Locator, Page as PlaywrightPage
 
 from mops.abstraction.element_abc import ElementABC
-from mops.exceptions import InvalidSelectorException, NotInitializedException
+from mops.exceptions import (
+    DriverWrapperException,
+    InvalidSelectorException,
+    NoSuchElementException,
+    NotInitializedException,
+)
 from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
+from mops.self_healing.config import get_config
+from mops.self_healing.healer import FailedHealingResult, SuccessHealingResult
+from mops.self_healing.healer_factory import get_healer
+from mops.self_healing.locator_generator import generate_locator_pw
 from mops.shared_utils import cut_log_data, get_image
-from mops.utils.decorators import retry
+from mops.utils.decorators import healing, retry
 from mops.utils.internal_utils import (
     calculate_coordinate_to_click,
     is_element,
@@ -77,6 +86,7 @@ class PlayElement(ElementABC, Logging, ABC):
 
     # Element interaction
 
+    @healing
     def click(self, *, force_wait: bool = True, **kwargs: Any) -> PlayElement:
         """
         Clicks on the element.
@@ -101,10 +111,13 @@ class PlayElement(ElementABC, Logging, ABC):
         if force_wait:
             self.wait_visibility(silent=True)
 
-        if self.driver_wrapper.is_mobile_resolution:
-            self._first_element.tap(**kwargs)
-        else:
-            self._first_element.click(**kwargs)
+        try:
+            if self.driver_wrapper.is_mobile_resolution:
+                self._first_element.tap(**kwargs)
+            else:
+                self._first_element.click(**kwargs)
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
         return self
 
@@ -142,6 +155,7 @@ class PlayElement(ElementABC, Logging, ABC):
         self.driver_wrapper.click_by_coordinates(x=x, y=y, silent=True)
         return self
 
+    @healing
     def type_text(self, text: str | KeyboardKeys, silent: bool = False) -> PlayElement:
         """
         Types text into the element.
@@ -157,9 +171,13 @@ class PlayElement(ElementABC, Logging, ABC):
         if not silent:
             self.log(f'Type text "{cut_log_data(text)}" into "{self.name}"')
 
-        self._first_element.type(text=text)
+        try:
+            self._first_element.type(text=text)
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
         return self
 
+    @healing
     def type_slowly(self, text: str, sleep_gap: float = 0.05, silent: bool = False) -> PlayElement:
         """
         Types text into the element slowly with a delay between keystrokes.
@@ -175,9 +193,13 @@ class PlayElement(ElementABC, Logging, ABC):
         if not silent:
             self.log(f'Type text {cut_log_data(text)} into "{self.name}"')
 
-        self._first_element.type(text=text, delay=sleep_gap)
+        try:
+            self._first_element.type(text=text, delay=sleep_gap)
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
         return self
 
+    @healing
     def clear_text(self, silent: bool = False) -> PlayElement:
         """
         Clear the text of the element.
@@ -189,9 +211,13 @@ class PlayElement(ElementABC, Logging, ABC):
         if not silent:
             self.log(f'Clear text in "{self.name}"')
 
-        self._first_element.fill('')
+        try:
+            self._first_element.fill('')
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
         return self
 
+    @healing
     def hover(self, silent: bool = False) -> PlayElement:
         """
         Hover the mouse over the current element.
@@ -203,7 +229,10 @@ class PlayElement(ElementABC, Logging, ABC):
         if not silent:
             self.log(f'Hover over "{self.name}"')
 
-        self._first_element.hover()
+        try:
+            self._first_element.hover()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
         return self
 
     def hover_outside(self, x: int = 0, y: int = -5) -> PlayElement:
@@ -220,28 +249,35 @@ class PlayElement(ElementABC, Logging, ABC):
         self._first_element.hover(position={'x': float(x), 'y': float(y)}, force=True)
         return self
 
+    @healing
     def check(self) -> PlayElement:
         """
         Check the checkbox element.
 
         :return: :class:`PlayElement`
         """
-        self._first_element.check()
-
+        try:
+            self._first_element.check()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
         return self
 
+    @healing
     def uncheck(self) -> PlayElement:
         """
         Unchecks the checkbox element.
 
         :return: :class:`PlayElement`
         """
-        self._first_element.uncheck()
-
+        try:
+            self._first_element.uncheck()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
         return self
 
     # Element state
 
+    @healing
     def screenshot_image(self, screenshot_base: bytes | None = None) -> Image:
         """
         Return a :class:`PIL.Image.Image` object representing the screenshot of the web element.
@@ -256,40 +292,56 @@ class PlayElement(ElementABC, Logging, ABC):
         return get_image(screenshot_base)
 
     @property
+    @healing
     def screenshot_base(self) -> bytes:
         """
         Returns the binary screenshot data of the element.
 
         :return: :class:`bytes` - screenshot binary
         """
-        return self._first_element.screenshot()
+        try:
+            return self._first_element.screenshot()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
     @property
+    @healing
     def text(self) -> str:
         """
         Returns the text of the element.
 
         :return: :class:`str` - element text
         """
-        return self.inner_text
+        try:
+            return self.inner_text
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
     @property
+    @healing
     def inner_text(self) -> str:
         """
         Returns the inner text of the element.
 
         :return: :class:`str` - element inner text
         """
-        return self._first_element.inner_text()
+        try:
+            return self._first_element.inner_text()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
     @property
+    @healing
     def value(self) -> str:
         """
         Returns the value of the element.
 
         :return: :class:`str` - element value
         """
-        return self._first_element.input_value()
+        try:
+            return self._first_element.input_value()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
     def is_available(self) -> bool:
         """
@@ -297,7 +349,10 @@ class PlayElement(ElementABC, Logging, ABC):
 
         :return: :class:`bool` - :obj:`True` if present in DOM
         """
-        return bool(len(self.element.element_handles()))
+        result = bool(len(self.element.element_handles()))
+        if result:
+            self._save_snapshot(self._first_element)
+        return result
 
     def is_displayed(self, silent: bool = False) -> bool:
         """
@@ -311,9 +366,13 @@ class PlayElement(ElementABC, Logging, ABC):
             self.log(f'Check visibility of "{self.name}"')
 
         try:
-            return self._first_element.is_visible()
+            result = self._first_element.is_visible()
         except Error as exc:
             raise InvalidSelectorException(exc.message) from exc
+        else:
+            if result:
+                self._save_snapshot(self._first_element)
+            return result
 
     def is_hidden(self, silent: bool = False) -> bool:
         """
@@ -328,6 +387,7 @@ class PlayElement(ElementABC, Logging, ABC):
 
         return self._first_element.is_hidden()
 
+    @healing
     def get_attribute(self, attribute: str, silent: bool = False) -> str:
         """
         Retrieve a specific attribute from the current element.
@@ -341,7 +401,10 @@ class PlayElement(ElementABC, Logging, ABC):
         if not silent:
             self.log(f'Get "{attribute}" from "{self.name}"')
 
-        return self._first_element.get_attribute(attribute)
+        try:
+            return self._first_element.get_attribute(attribute)
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
     def get_all_texts(self, silent: bool = False) -> list:
         """
@@ -401,6 +464,7 @@ class PlayElement(ElementABC, Logging, ABC):
         box = self.element.first.bounding_box()
         return Location(x=box['x'], y=box['y'])
 
+    @healing
     def is_enabled(self, silent: bool = False) -> bool:
         """
         Check if the current element is enabled.
@@ -412,25 +476,38 @@ class PlayElement(ElementABC, Logging, ABC):
         if not silent:
             self.log(f'Check is element "{self.name}" enabled')
 
-        return self._first_element.is_enabled()
+        try:
+            return self._first_element.is_enabled()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
+    @healing
     def is_checked(self) -> bool:
         """
         Check if a checkbox or radio button is selected.
 
         :return: :class:`bool` - :obj:`True` if the checkbox or radio button is checked, :obj:`False` otherwise.
         """
-        return self._first_element.is_checked()
+        try:
+            return self._first_element.is_checked()
+        except Error as exc:
+            raise NoSuchElementException(str(exc)) from exc
 
     # Mixin
 
-    def _get_base(self) -> PlaywrightPage | Locator:
+    def _get_base(self, wait_strategy: bool = True) -> PlaywrightPage | Locator:
         """
         Get driver depends on parent element if available
 
+        :param wait_strategy: Compatibility parameter for the Selenium signature.
+            Playwright Locators are lazy so this has no effect.
         :return: driver
         """
         base = self.driver
+        if not base:
+            msg = "Can't find driver"
+            raise DriverWrapperException(msg)
+
         if self.parent:
             self.log(f'Get element "{self.name}" from parent element "{self.parent.name}"', level='debug')
 
@@ -452,3 +529,107 @@ class PlayElement(ElementABC, Logging, ABC):
         self.locator = get_platform_locator(self)
         set_playwright_locator(self)
         self._is_locator_configured = True
+
+    # Self-healing
+
+    @staticmethod
+    def _parse_healed_locator_pw(healed_locator: str) -> str:
+        """Strip the ``xpath=`` prefix from a healed locator for Playwright use."""
+        if healed_locator.startswith('xpath='):
+            return healed_locator[len('xpath=') :]
+        return healed_locator
+
+    def _save_snapshot(self, locator_element: Locator) -> None:
+        """Save a DOM snapshot for the current element if snapshot saving is enabled."""
+        config = get_config()
+        if config.save_snapshots and config.storage:
+            try:
+                config.storage.save_from_element(self, locator_element, self.driver_wrapper)
+            except Exception as exc:  # noqa: BLE001
+                self.log(f'Failed to save snapshot for "{self.name}": {exc}', level='debug')
+
+    def _attempt_healing(self) -> SuccessHealingResult | None:
+        """Attempt to heal a failed element lookup using the self-healing subsystem.
+
+        :return: :class:`SuccessHealingResult` if a suitable candidate was found,
+            :obj:`None` otherwise.
+        """
+        try:
+            healer = get_healer()
+            storage = get_config().storage
+            locator_key = storage.extract_full_locator_key(self)
+            result = healer.heal(
+                element_name=self.name,
+                locator_key=locator_key,
+                locator=self.locator,
+                driver_wrapper=self.driver_wrapper,
+                find_elements_fn=lambda tag: self.driver.locator(tag).all(),
+                generate_locator_fn=generate_locator_pw,
+            )
+            if type(result) is SuccessHealingResult:
+                return result
+        except Exception as exc:  # noqa: BLE001
+            self.log(f'Self-healing failed with unexpected exception: {exc}', level='warning')
+            return None
+
+    def _try_healed_locators(self, result: SuccessHealingResult) -> None:
+        """Try each healed locator candidate and persist the first working one.
+
+        Fires ``on_healing_success`` after a candidate passes DOM verification,
+        or ``on_healing_failure`` if none of the candidates work.
+
+        :param result: The healing result containing candidate locators.
+        :raises NoSuchElementException: If no candidate locator resolves to an element.
+        """
+        base = self._get_base(wait_strategy=False)
+        config = get_config()
+        for locator_str in result.healed_locators_candidates:
+            selector = self._parse_healed_locator_pw(locator_str)
+            try:
+                candidate = base.locator(selector)
+                if candidate.count() > 0:
+                    result.healed_locator = locator_str
+                    self.locator = selector
+                    self._element = candidate
+                    # Fire success callback AFTER locator is verified against DOM
+                    if config.on_healing_success:
+                        config.on_healing_success(result)
+                    return
+            except Error:
+                continue
+        # None of the candidates worked — fire failure callback
+        if config.on_healing_failure:
+            result = FailedHealingResult(
+                element_name=result.element_name,
+                locator_key='',
+                locator=result.original_locator,
+                reason='no-verified-locator',
+                error='All healed locator candidates failed DOM verification',
+            )
+            config.on_healing_failure(result)
+
+        raise NoSuchElementException
+
+    def _apply_healing(self) -> bool:
+        """Attempt healing and persist the first working locator.
+
+        Called by :func:`@healing <mops.utils.decorators.healing>` and
+        :func:`@healing_after_wait <mops.utils.decorators.healing_after_wait>`.
+
+        :return: :obj:`True` if a healed locator was found and applied.
+        """
+        result = self._attempt_healing()
+        if not result:
+            return False
+        try:
+            self._try_healed_locators(result)
+        except NoSuchElementException:
+            return False
+        return True
+
+    def _heal_after_wait(self) -> bool:
+        """Attempt healing after a wait condition timed out.
+
+        :return: :obj:`True` if a working locator was found.
+        """
+        return self._apply_healing()

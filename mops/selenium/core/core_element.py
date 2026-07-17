@@ -11,6 +11,7 @@ from selenium.common.exceptions import (
     StaleElementReferenceException as SeleniumStaleElementReferenceException,
     WebDriverException as SeleniumWebDriverException,
 )
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 
 from mops.abstraction.element_abc import ElementABC
@@ -27,8 +28,11 @@ from mops.mixins.internal_mixin import get_element_info
 from mops.mixins.objects.location import Location
 from mops.mixins.objects.size import Size
 from mops.selenium.sel_utils import ActionChains
+from mops.self_healing.config import get_config
+from mops.self_healing.healer import FailedHealingResult, SuccessHealingResult
+from mops.self_healing.healer_factory import get_healer
 from mops.shared_utils import _scaled_screenshot, cut_log_data
-from mops.utils.decorators import retry
+from mops.utils.decorators import healing, retry
 from mops.utils.internal_utils import WAIT_EL, get_dict, is_group, safe_call
 
 if TYPE_CHECKING:
@@ -41,6 +45,14 @@ if TYPE_CHECKING:
 
     from mops.base.element import Element
     from mops.keyboard_keys import KeyboardKeys
+
+
+def _parse_healed_locator(healed_locator: str) -> tuple[str, str]:
+    """Convert a ``xpath=//...`` prefixed locator into a ``(By, value)`` tuple."""
+    if healed_locator.startswith('xpath='):
+        return By.XPATH, healed_locator[len('xpath=') :]
+    # Default fallback: treat as XPath
+    return By.XPATH, healed_locator
 
 
 class CoreElement(ElementABC, ABC):
@@ -88,6 +100,7 @@ class CoreElement(ElementABC, ABC):
 
     # Element interaction
 
+    @healing
     @retry(ElementNotInteractableException)
     def click(self, *, force_wait: bool = True, **kwargs: Any) -> CoreElement:
         """
@@ -123,6 +136,7 @@ class CoreElement(ElementABC, ABC):
         msg = f'Element "{self.name}" not interactable. {self.get_element_info()}. Original error: {selenium_exc_msg}'
         raise ElementNotInteractableException(msg)
 
+    @healing
     def type_text(self, text: str | KeyboardKeys, silent: bool = False) -> CoreElement:
         """
         Types text into the element.
@@ -142,6 +156,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def type_slowly(self, text: str, sleep_gap: float = 0.05, silent: bool = False) -> CoreElement:
         """
         Types text into the element slowly with a delay between keystrokes.
@@ -166,6 +181,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def clear_text(self, silent: bool = False) -> CoreElement:
         """
         Clear the text of the element.
@@ -181,6 +197,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def check(self) -> CoreElement:
         """
         Check the checkbox element.
@@ -197,6 +214,7 @@ class CoreElement(ElementABC, ABC):
 
         return self
 
+    @healing
     def uncheck(self) -> CoreElement:
         """
         Unchecks the checkbox element.
@@ -215,6 +233,7 @@ class CoreElement(ElementABC, ABC):
 
     # Element state
 
+    @healing
     def screenshot_image(self, screenshot_base: bytes | None = None) -> Image:
         """
         Return a :class:`PIL.Image.Image` object representing the screenshot of the web element.
@@ -230,6 +249,7 @@ class CoreElement(ElementABC, ABC):
         return _scaled_screenshot(screenshot_base, element_size)
 
     @property
+    @healing
     def screenshot_base(self) -> bytes:
         """
         Returns the binary screenshot data of the element.
@@ -241,6 +261,7 @@ class CoreElement(ElementABC, ABC):
         return self.element.screenshot_as_png
 
     @property
+    @healing
     @retry(SeleniumStaleElementReferenceException)
     def text(self) -> str:
         """
@@ -324,6 +345,7 @@ class CoreElement(ElementABC, ABC):
 
         return status
 
+    @healing
     @retry(SeleniumStaleElementReferenceException)
     def get_attribute(self, attribute: str, silent: bool = False) -> str:
         """
@@ -397,6 +419,7 @@ class CoreElement(ElementABC, ABC):
         """
         return Location(**self.execute_script(get_element_position_on_screen_js))
 
+    @healing
     def is_enabled(self, silent: bool = False) -> bool:
         """
         Check if the current element is enabled.
@@ -410,6 +433,7 @@ class CoreElement(ElementABC, ABC):
 
         return self.element.is_enabled()
 
+    @healing
     def is_checked(self) -> bool:
         """
         Check if a checkbox or radio button is selected.
@@ -491,7 +515,10 @@ class CoreElement(ElementABC, ABC):
             return base
 
         if self.parent:
-            base = self.parent._get_element(wait_strategy=wait_strategy)
+            if self.parent._is_element_still_available(self.parent._element):
+                base = self.parent._element
+            else:
+                base = self.parent._find_element(wait_parent=False)
 
         return base
 
@@ -508,12 +535,93 @@ class CoreElement(ElementABC, ABC):
         try:
             element = base.find_element(self.locator_type, self.locator)
             self._cached_element = element
+            # Save snapshot for future healing
+            config = get_config()
+            if config.save_snapshots and config.storage:
+                config.storage.save_from_element(self, element, self.driver)
         except (SeleniumInvalidArgumentException, SeleniumInvalidSelectorException) as exc:
             self._raise_invalid_selector_exception(exc)
         except SeleniumNoSuchElementException as exc:
             raise NoSuchElementException(exc.msg) from exc
         else:
             return element
+
+    def _attempt_healing(self) -> SuccessHealingResult | None:
+        """
+        Attempt to heal a failed element lookup using the self-healing subsystem.
+
+        :return: :class:`SuccessHealingResult` if a suitable candidate was found, :obj:`None` otherwise.
+        """
+        try:
+            healer = get_healer()
+            locator_key = get_config().storage.extract_full_locator_key(self)
+            result = healer.heal(self.name, locator_key, self.locator, self.driver_wrapper)
+            if type(result) is SuccessHealingResult:
+                return result
+        except Exception as exc:  # noqa: BLE001
+            self.log(f'Self-healing failed with unexpected exception: {exc}', level='warning')
+            return None
+
+    def _try_healed_locators(self, result: SuccessHealingResult) -> SeleniumWebElement:
+        """Try each healed locator and persist the first working one.
+
+        Fires ``on_healing_success`` after a candidate passes DOM verification,
+        or ``on_healing_failure`` if none of the candidates work.
+        """
+        base = self._get_base(wait_strategy=False)
+        for locator in result.healed_locators_candidates:
+            healed_locator_type, healed_locator_value = _parse_healed_locator(locator)
+            try:
+                healed = base.find_element(healed_locator_type, healed_locator_value)
+            except SeleniumNoSuchElementException:
+                continue
+            result.healed_locator = locator
+            self.locator_type = healed_locator_type
+            self.locator = healed_locator_value
+            self._cached_element = healed
+            # Fire success callback AFTER locator is verified against DOM
+            config = get_config()
+            if config.on_healing_success:
+                config.on_healing_success(result)
+            return healed
+        # None of the candidates worked — fire failure callback
+        config = get_config()
+        if config.on_healing_failure:
+            config.on_healing_failure(
+                FailedHealingResult(
+                    element_name=result.element_name,
+                    locator_key='',
+                    locator=result.original_locator,
+                    reason='no-verified-locator',
+                    error='All healed locator candidates failed find_element()',
+                )
+            )
+        raise NoSuchElementException
+
+    def _apply_healing(self) -> bool:
+        """Attempt healing and persist the first working locator.
+
+        Called by :func:`@healing <mops.utils.decorators.healing>` and
+        :func:`@healing_after_wait <mops.utils.decorators.healing_after_wait>`.
+
+        :return: :obj:`True` if a healed locator was found and applied.
+        """
+        result = self._attempt_healing()
+        if not result:
+            return False
+        try:
+            self._try_healed_locators(result)
+        except NoSuchElementException:
+            return False
+        return True
+
+    def _heal_after_wait(self) -> bool:
+        """Attempt healing after a wait condition timed out.
+
+        Persists the first working healed locator so subsequent lookups
+        use it directly. Returns ``True`` if a working locator was found.
+        """
+        return self._apply_healing()
 
     def _find_elements(self, wait_parent: bool = False) -> list[SeleniumWebElement | AppiumWebElement]:
         """
